@@ -44,7 +44,7 @@
 
 | Задача | Технологии | Статус |
 |--------|------------|--------|
-| Создание репозиториев (backend, frontend, mobile, docs) | GitHub, GitLab, Docker | ❌ |
+| Создание репозиториев (backend, frontend, mobile, docs) | GitHub | ✅ |
 | Подготовка инфраструктуры (VPS, домен, SSL, CI/CD) | Ubuntu, Docker, Nginx, PostgreSQL, Redis | ❌ |
 | ERD и спецификация схемы БД | `docs/schema-spec.md`, `docs/erd.md` | ✅ |
 | Описание ролей и матрица доступа | `schema-spec.md` (раздел 2.1) | ✅ |
