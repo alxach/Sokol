@@ -1,0 +1,3 @@
+Design a modern sports management system called SOKOL.
+Use blue and navy colors.
+Create desktop and mobile layouts.

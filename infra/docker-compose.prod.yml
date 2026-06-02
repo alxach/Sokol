@@ -1,0 +1,16 @@
+services:
+  backend:
+    build:
+      target: runner
+    environment:
+      BACKEND_DEBUG: "false"
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
+    volumes: []
+
+  frontend:
+    build:
+      target: runner
+    environment:
+      NODE_ENV: production
+    volumes: []

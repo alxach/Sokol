@@ -1,0 +1,4 @@
+Build SOKOL sports management platform.
+Stack: Next.js + PostgreSQL.
+Modules:
+Dashboard, CRM, Analytics, Documents.

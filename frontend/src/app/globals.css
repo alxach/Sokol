@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #fafafa;
+  --color-foreground: #09234C;
+
+  --color-brand-blue: #467FC0;
+  --color-brand-blue-hover: #3a6ca8;
+  --color-brand-navy: #09234C;
+  --color-brand-navy-light: #0f2e5e;
+  --color-brand-orange: #F4A838;
+  --color-brand-orange-hover: #e09a2f;
+  --color-brand-light-blue: #4595E5;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: Arial, Helvetica, system-ui, -apple-system, sans-serif;
+}

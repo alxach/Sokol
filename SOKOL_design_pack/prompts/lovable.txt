@@ -1,0 +1,14 @@
+Create a sports CRM named SOKOL.
+Style: modern, clean, trustworthy.
+Colors:
+- #467FC0
+- #09234C
+- #F4A838
+
+Modules:
+- Dashboard
+- Athletes
+- Coaches
+- Competitions
+- Documents
+- Analytics
