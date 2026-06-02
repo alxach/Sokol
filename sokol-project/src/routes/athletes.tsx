@@ -235,6 +235,7 @@ function AthletesPage() {
         <AthleteModal
           athlete={editing}
           coachName={isCoach ? user?.coachName ?? "" : undefined}
+          coachDiscipline={isCoach ? user?.coachDiscipline : undefined}
           onClose={() => { setShowModal(false); setEditing(null); }}
           onSaved={() => {
             setShowModal(false);
@@ -254,17 +255,19 @@ const statusOptions: AthleteStatus[] = ["Активный", "Сборы", "Тр�
 function AthleteModal({
   athlete,
   coachName,
+  coachDiscipline,
   onClose,
   onSaved,
 }: {
   athlete: Athlete | null;
   coachName?: string;
+  coachDiscipline?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const isEdit = !!athlete;
   const [name, setName] = useState(athlete?.name ?? "");
-  const [discipline, setDiscipline] = useState<Discipline>(athlete?.discipline ?? "Дзюдо");
+  const [discipline, setDiscipline] = useState<Discipline>((athlete?.discipline ?? coachDiscipline ?? "Дзюдо") as Discipline);
   const [rank, setRank] = useState(athlete?.rank ?? "КМС");
   const [age, setAge] = useState(String(athlete?.age ?? ""));
   const [city, setCity] = useState(athlete?.city ?? "");
@@ -317,13 +320,14 @@ function AthleteModal({
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Иванов Иван" className="h-9" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Вид спорта</label>
-              <select
-                value={discipline}
-                onChange={(e) => setDiscipline(e.target.value as Discipline)}
-                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Вид спорта</label>
+                <select
+                  value={discipline}
+                  onChange={(e) => setDiscipline(e.target.value as Discipline)}
+                  disabled={!!coachDiscipline}
+                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-60"
+                >
                 {disciplines.filter((d) => d !== "Все").map((d) => (
                   <option key={d} value={d}>{d}</option>
                 ))}
