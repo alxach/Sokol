@@ -9,6 +9,7 @@ import {
   Settings,
   ClipboardList,
   CalendarCheck,
+  Calendar,
 } from "lucide-react";
 import {
   Sidebar,
@@ -36,6 +37,7 @@ export function AppSidebar() {
 
   const adminModules = [
     { title: "Тренеры", url: "/coaches", icon: UserCog },
+    { title: "Расписание", url: "/schedules", icon: Calendar },
     { title: "Соревнования", url: "/competitions", icon: Trophy },
     { title: "План мероприятий", url: "/plans", icon: CalendarCheck },
     { title: "Отчёты", url: "/reports", icon: FileText },
@@ -45,6 +47,7 @@ export function AppSidebar() {
   ];
 
   const coachModules = [
+    { title: "Расписание", url: "/schedules", icon: Calendar },
     { title: "Соревнования", url: "/competitions", icon: Trophy },
     { title: "Мои группы", url: "/groups", icon: ClipboardList },
     { title: "План мероприятий", url: "/plans", icon: CalendarCheck },

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SchedulesRouteImport } from './routes/schedules'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as PlansRouteImport } from './routes/plans'
 import { Route as LoginRouteImport } from './routes/login'
@@ -21,6 +22,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportsNewRouteImport } from './routes/reports/new'
 import { Route as PlansNewRouteImport } from './routes/plans/new'
 
+const SchedulesRoute = SchedulesRouteImport.update({
+  id: '/schedules',
+  path: '/schedules',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReportsRoute = ReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/plans': typeof PlansRouteWithChildren
   '/reports': typeof ReportsRouteWithChildren
+  '/schedules': typeof SchedulesRoute
   '/plans/new': typeof PlansNewRoute
   '/reports/new': typeof ReportsNewRoute
 }
@@ -100,6 +107,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/plans': typeof PlansRouteWithChildren
   '/reports': typeof ReportsRouteWithChildren
+  '/schedules': typeof SchedulesRoute
   '/plans/new': typeof PlansNewRoute
   '/reports/new': typeof ReportsNewRoute
 }
@@ -114,6 +122,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/plans': typeof PlansRouteWithChildren
   '/reports': typeof ReportsRouteWithChildren
+  '/schedules': typeof SchedulesRoute
   '/plans/new': typeof PlansNewRoute
   '/reports/new': typeof ReportsNewRoute
 }
@@ -129,6 +138,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/plans'
     | '/reports'
+    | '/schedules'
     | '/plans/new'
     | '/reports/new'
   fileRoutesByTo: FileRoutesByTo
@@ -142,6 +152,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/plans'
     | '/reports'
+    | '/schedules'
     | '/plans/new'
     | '/reports/new'
   id:
@@ -155,6 +166,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/plans'
     | '/reports'
+    | '/schedules'
     | '/plans/new'
     | '/reports/new'
   fileRoutesById: FileRoutesById
@@ -169,10 +181,18 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PlansRoute: typeof PlansRouteWithChildren
   ReportsRoute: typeof ReportsRouteWithChildren
+  SchedulesRoute: typeof SchedulesRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/schedules': {
+      id: '/schedules'
+      path: '/schedules'
+      fullPath: '/schedules'
+      preLoaderRoute: typeof SchedulesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reports': {
       id: '/reports'
       path: '/reports'
@@ -284,6 +304,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PlansRoute: PlansRouteWithChildren,
   ReportsRoute: ReportsRouteWithChildren,
+  SchedulesRoute: SchedulesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
