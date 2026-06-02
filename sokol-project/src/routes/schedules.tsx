@@ -172,26 +172,36 @@ function AddScheduleModal({
   onClose: () => void;
 }) {
   const [groupId, setGroupId] = useState(userGroups[0]?.id ?? "");
-  const [dayOfWeek, setDayOfWeek] = useState(1);
+  const [selectedDays, setSelectedDays] = useState<number[]>([1]);
   const [timeStart, setTimeStart] = useState("09:00");
   const [timeEnd, setTimeEnd] = useState("10:30");
   const [room, setRoom] = useState("");
 
   const selectedGroup = userGroups.find((g) => g.id === groupId);
 
+  const toggleDay = (day: number) => {
+    setSelectedDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort(),
+    );
+  };
+
   const handleAdd = () => {
-    const newId = `SCH-${String(allSchedules.length + 1).padStart(3, "0")}`;
-    allSchedules.push({
-      id: newId,
-      coachId,
-      coachName,
-      group: selectedGroup?.name ?? "",
-      discipline: (selectedGroup?.discipline ?? "Дзюдо") as Discipline,
-      dayOfWeek,
-      timeStart,
-      timeEnd,
-      room: room || "Не указано",
-    });
+    if (selectedDays.length === 0) return;
+    let next = allSchedules.length + 1;
+    for (const day of selectedDays) {
+      const newId = `SCH-${String(next++).padStart(3, "0")}`;
+      allSchedules.push({
+        id: newId,
+        coachId,
+        coachName,
+        group: selectedGroup?.name ?? "",
+        discipline: (selectedGroup?.discipline ?? "Дзюдо") as Discipline,
+        dayOfWeek: day,
+        timeStart,
+        timeEnd,
+        room: room || "Не указано",
+      });
+    }
     onClose();
   };
 
@@ -216,22 +226,29 @@ function AddScheduleModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">День недели *</label>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Дни недели *</label>
             <div className="flex flex-wrap gap-1.5">
-              {dayNamesShort.map((name, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setDayOfWeek(idx + 1)}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                    dayOfWeek === idx + 1
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                  }`}
-                >
-                  {name}
-                </button>
-              ))}
+              {dayNamesShort.map((name, idx) => {
+                const dayNum = idx + 1;
+                const active = selectedDays.includes(dayNum);
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => toggleDay(dayNum)}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                    }`}
+                  >
+                    {name}
+                  </button>
+                );
+              })}
             </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Выбрано {selectedDays.length} {selectedDays.length === 1 ? "день" : selectedDays.length < 5 ? "дня" : "дней"}
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
