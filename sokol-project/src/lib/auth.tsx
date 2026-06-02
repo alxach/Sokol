@@ -10,6 +10,7 @@ interface User {
   centerId?: string;
   coachName?: string;
   coachDiscipline?: string;
+  city?: string;
 }
 
 interface AuthContextValue {
@@ -40,6 +41,7 @@ const MOCK_USERS: Record<string, User> = {
     roles: ["coach"],
     coachName: "Петров А.В.",
     coachDiscipline: "Дзюдо",
+    city: "Москва",
   },
 };
 

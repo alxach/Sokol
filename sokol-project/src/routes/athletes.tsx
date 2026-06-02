@@ -236,6 +236,7 @@ function AthletesPage() {
           athlete={editing}
           coachName={isCoach ? user?.coachName ?? "" : undefined}
           coachDiscipline={isCoach ? user?.coachDiscipline : undefined}
+          coachCity={isCoach ? user?.city : undefined}
           onClose={() => { setShowModal(false); setEditing(null); }}
           onSaved={() => {
             setShowModal(false);
@@ -256,12 +257,14 @@ function AthleteModal({
   athlete,
   coachName,
   coachDiscipline,
+  coachCity,
   onClose,
   onSaved,
 }: {
   athlete: Athlete | null;
   coachName?: string;
   coachDiscipline?: string;
+  coachCity?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -269,10 +272,16 @@ function AthleteModal({
   const [name, setName] = useState(athlete?.name ?? "");
   const [discipline, setDiscipline] = useState<Discipline>((athlete?.discipline ?? coachDiscipline ?? "Дзюдо") as Discipline);
   const [rank, setRank] = useState(athlete?.rank ?? "КМС");
-  const [age, setAge] = useState(String(athlete?.age ?? ""));
-  const [city, setCity] = useState(athlete?.city ?? "");
+  const [dob, setDob] = useState("");
+  const [city, setCity] = useState(athlete?.city ?? coachCity ?? "");
   const [status, setStatus] = useState<AthleteStatus>(athlete?.status ?? "Активный");
   const [coach, setCoach] = useState(athlete?.coach ?? coachName ?? "");
+
+  const calcAge = (birth: string) => {
+    if (!birth) return 0;
+    const diff = Date.now() - new Date(birth).getTime();
+    return Math.floor(diff / 31557600000);
+  };
 
   const handleSave = () => {
     if (!name.trim()) return;
@@ -281,7 +290,7 @@ function AthleteModal({
         name: name.trim(),
         discipline,
         rank,
-        age: Number(age) || 0,
+        age: calcAge(dob) || athlete.age,
         city: city.trim(),
         status,
         coach: coach.trim(),
@@ -295,7 +304,7 @@ function AthleteModal({
         name: name.trim(),
         discipline,
         rank: rank || "КМС",
-        age: Number(age) || 0,
+        age: calcAge(dob) || 0,
         city: city.trim() || "Не указано",
         coach: coach.trim(),
         status,
@@ -348,12 +357,12 @@ function AthleteModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Возраст</label>
-              <Input type="number" value={age} onChange={(e) => setAge(e.target.value)} className="h-9" />
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Дата рождения</label>
+              <Input type="date" value={dob} onChange={(e) => setDob(e.target.value)} className="h-9" />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Город</label>
-              <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Москва" className="h-9" />
+              <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Москва" className="h-9" disabled={!!coachCity} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
