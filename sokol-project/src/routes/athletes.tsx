@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Filter, Plus, Search, Medal } from "lucide-react";
+import { Filter, Plus, Search, Medal, Pencil, Trash2, X } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
 import { useAuthGuard, useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -15,7 +16,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { athletes, type AthleteStatus, type Discipline } from "@/lib/mock-data";
+import {
+  athletes,
+  type AthleteStatus,
+  type Discipline,
+  type Athlete,
+} from "@/lib/mock-data";
 
 export const Route = createFileRoute("/athletes")({
   head: () => ({
@@ -41,6 +47,8 @@ function AthletesPage() {
   const { isCoach } = useAuth();
   const [query, setQuery] = useState("");
   const [discipline, setDiscipline] = useState<(typeof disciplines)[number]>("Все");
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState<Athlete | null>(null);
 
   const accessible = useMemo(() => {
     return isCoach && user?.coachName
@@ -87,10 +95,10 @@ function AthletesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button variant="outline" disabled>
             <Filter className="mr-2 h-4 w-4" /> Фильтры
           </Button>
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button onClick={() => { setEditing(null); setShowModal(true); }} className="bg-primary text-primary-foreground hover:bg-primary/90">
             <Plus className="mr-2 h-4 w-4" /> Добавить
           </Button>
         </div>
@@ -144,6 +152,7 @@ function AthletesPage() {
                 <TableHead>Статус</TableHead>
                 <TableHead className="text-center">Медали (З/С/Б)</TableHead>
                 <TableHead className="text-right">Рейтинг</TableHead>
+                <TableHead className="w-[80px] text-right">Действия</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -183,11 +192,36 @@ function AthletesPage() {
                   <TableCell className="text-right font-display font-bold text-primary">
                     {a.rating.toLocaleString("ru-RU")}
                   </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <button
+                        onClick={() => { setEditing(a); setShowModal(true); }}
+                        className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                        title="Редактировать"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Удалить ${a.name}?`)) {
+                            const idx = athletes.findIndex((x) => x.id === a.id);
+                            if (idx !== -1) athletes.splice(idx, 1);
+                            setQuery((q) => q + " ");
+                            setTimeout(() => setQuery((q) => q.trim()), 0);
+                          }
+                        }}
+                        className="rounded-md p-1.5 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+                        title="Удалить"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-12 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={9} className="py-12 text-center text-sm text-muted-foreground">
                     Ничего не найдено по выбранным фильтрам.
                   </TableCell>
                 </TableRow>
@@ -196,7 +230,161 @@ function AthletesPage() {
           </Table>
         </div>
       </Card>
+
+      {showModal && (
+        <AthleteModal
+          athlete={editing}
+          coachName={isCoach ? user?.coachName ?? "" : undefined}
+          onClose={() => { setShowModal(false); setEditing(null); }}
+          onSaved={() => {
+            setShowModal(false);
+            setEditing(null);
+            setQuery((q) => q + " ");
+            setTimeout(() => setQuery((q) => q.trim()), 0);
+          }}
+        />
+      )}
     </AppShell>
+  );
+}
+
+const rankOptions = ["КМС", "МС", "МСМК", "ЗМС", "1-й разряд", "2-й разряд", "3-й разряд"];
+const statusOptions: AthleteStatus[] = ["Активный", "Сборы", "Травма", "Резерв"];
+
+function AthleteModal({
+  athlete,
+  coachName,
+  onClose,
+  onSaved,
+}: {
+  athlete: Athlete | null;
+  coachName?: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isEdit = !!athlete;
+  const [name, setName] = useState(athlete?.name ?? "");
+  const [discipline, setDiscipline] = useState<Discipline>(athlete?.discipline ?? "Дзюдо");
+  const [rank, setRank] = useState(athlete?.rank ?? "КМС");
+  const [age, setAge] = useState(String(athlete?.age ?? ""));
+  const [city, setCity] = useState(athlete?.city ?? "");
+  const [status, setStatus] = useState<AthleteStatus>(athlete?.status ?? "Активный");
+  const [coach, setCoach] = useState(athlete?.coach ?? coachName ?? "");
+
+  const handleSave = () => {
+    if (!name.trim()) return;
+    if (isEdit) {
+      Object.assign(athlete, {
+        name: name.trim(),
+        discipline,
+        rank,
+        age: Number(age) || 0,
+        city: city.trim(),
+        status,
+        coach: coach.trim(),
+      });
+    } else {
+      const lastId = athletes
+        .map((a) => Number(a.id.replace("SK-", "")))
+        .reduce((max, n) => Math.max(max, n), 0);
+      athletes.push({
+        id: `SK-${String(lastId + 1).padStart(4, "0")}`,
+        name: name.trim(),
+        discipline,
+        rank: rank || "КМС",
+        age: Number(age) || 0,
+        city: city.trim() || "Не указано",
+        coach: coach.trim(),
+        status,
+        medals: { gold: 0, silver: 0, bronze: 0 },
+        rating: 1000,
+        lastEvent: "—",
+      });
+    }
+    onSaved();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl">
+        <div className="flex items-center justify-between border-b border-border px-5 py-3">
+          <h3 className="text-sm font-bold text-secondary">{isEdit ? "Редактировать" : "Новый"} спортсмен</h3>
+          <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+        </div>
+        <div className="space-y-4 p-5">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">ФИО *</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Иванов Иван" className="h-9" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Вид спорта</label>
+              <select
+                value={discipline}
+                onChange={(e) => setDiscipline(e.target.value as Discipline)}
+                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                {disciplines.filter((d) => d !== "Все").map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Разряд</label>
+              <select
+                value={rank}
+                onChange={(e) => setRank(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                {rankOptions.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Возраст</label>
+              <Input type="number" value={age} onChange={(e) => setAge(e.target.value)} className="h-9" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Город</label>
+              <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Москва" className="h-9" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Статус</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as AthleteStatus)}
+                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                {statusOptions.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Тренер</label>
+              <Input
+                value={coach}
+                onChange={(e) => setCoach(e.target.value)}
+                placeholder="Фамилия И.О."
+                className="h-9"
+                disabled={!!coachName}
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button onClick={onClose} variant="outline" className="flex-1">Отмена</Button>
+            <Button onClick={handleSave} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90">
+              {isEdit ? "Сохранить" : "Добавить"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
