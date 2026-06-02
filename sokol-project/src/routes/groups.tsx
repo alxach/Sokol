@@ -15,6 +15,8 @@ import {
   type Group,
   type Schedule,
   type Discipline,
+  type Athlete,
+  type AthleteStatus,
 } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/groups")({
@@ -45,6 +47,9 @@ function GroupsPage() {
   const [editDesc, setEditDesc] = useState("");
   const [editDiscipline, setEditDiscipline] = useState<Discipline>("Дзюдо");
   const [editAthleteIds, setEditAthleteIds] = useState<string[]>([]);
+  const [quickModal, setQuickModal] = useState<{ mode: "create" | "detail"; groupId?: string } | null>(null);
+  const [, forceUpdate] = useState(0);
+  const rerender = () => forceUpdate((n) => n + 1);
 
   const selected = useMemo(
     () => myGroups.find((g) => g.id === selectedId) ?? null,
@@ -176,7 +181,15 @@ function GroupsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Состав</label>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="text-xs font-medium text-muted-foreground">Состав</label>
+                  <button
+                    onClick={() => setQuickModal({ mode: "create" })}
+                    className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80"
+                  >
+                    <Plus className="h-3 w-3" /> Новый
+                  </button>
+                </div>
                 <p className="mb-2 text-xs text-muted-foreground">Выберите спортсменов из списка:</p>
                 <div className="max-h-40 space-y-1 overflow-y-auto">
                   {athletes.filter((a) => a.coach === user?.coachName).map((a) => {
@@ -243,7 +256,15 @@ function GroupsPage() {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Состав ({coachAthletes.length})</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-muted-foreground">Состав ({coachAthletes.length})</label>
+                  <button
+                    onClick={() => setQuickModal({ mode: "detail", groupId: selected.id })}
+                    className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80"
+                  >
+                    <Plus className="h-3 w-3" /> Добавить
+                  </button>
+                </div>
                 <div className="mt-1 space-y-1">
                   {coachAthletes.map((a) => (
                     <div key={a.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition hover:bg-muted/30">
@@ -263,6 +284,123 @@ function GroupsPage() {
           </Card>
         )}
       </div>
+
+      {quickModal && (
+        <QuickAthleteModal
+          groupId={quickModal.mode === "detail" ? quickModal.groupId! : undefined}
+          user={user}
+          isCoach={isCoach}
+          onClose={() => setQuickModal(null)}
+          onSaved={(newId) => {
+            if (quickModal.mode === "create") {
+              setEditAthleteIds((prev) => (prev.includes(newId) ? prev : [...prev, newId]));
+            }
+            rerender();
+            setQuickModal(null);
+          }}
+        />
+      )}
     </AppShell>
+  );
+}
+
+const rankOptions = ["КМС", "МС", "МСМК", "ЗМС", "1-й разряд", "2-й разряд", "3-й разряд"];
+
+const calcAge = (birth: string) => {
+  if (!birth) return 0;
+  const diff = Date.now() - new Date(birth).getTime();
+  return Math.floor(diff / 31557600000);
+};
+
+function QuickAthleteModal({
+  groupId,
+  user,
+  isCoach,
+  onClose,
+  onSaved,
+}: {
+  groupId?: string;
+  user: { coachName?: string; coachDiscipline?: string; city?: string } | null;
+  isCoach: boolean;
+  onClose: () => void;
+  onSaved: (newId: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [rank, setRank] = useState("КМС");
+  const [dob, setDob] = useState("");
+
+  const handleSave = () => {
+    if (!name.trim()) return;
+    const lastId = athletes
+      .map((a) => Number(a.id.replace("SK-", "")))
+      .reduce((max, n) => Math.max(max, n), 0);
+    const newId = `SK-${String(lastId + 1).padStart(4, "0")}`;
+    const newAthlete: Athlete = {
+      id: newId,
+      name: name.trim(),
+      discipline: (user?.coachDiscipline ?? "Дзюдо") as Discipline,
+      rank,
+      age: calcAge(dob) || 0,
+      city: user?.city ?? "",
+      coach: user?.coachName ?? "",
+      status: "Активный" as AthleteStatus,
+      medals: { gold: 0, silver: 0, bronze: 0 },
+      rating: 1000,
+      lastEvent: "—",
+    };
+    athletes.push(newAthlete);
+    if (groupId) {
+      const grp = allGroups.find((g) => g.id === groupId);
+      if (grp && !grp.athleteIds.includes(newId)) {
+        grp.athleteIds.push(newId);
+      }
+    }
+    onSaved(newId);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xl">
+        <div className="flex items-center justify-between border-b border-border px-5 py-3">
+          <h3 className="text-sm font-bold text-secondary">Новый спортсмен</h3>
+          <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+        </div>
+        <div className="space-y-4 p-5">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">ФИО *</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Иванов Иван" className="h-9" autoFocus />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Разряд</label>
+              <select
+                value={rank}
+                onChange={(e) => setRank(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                {rankOptions.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Дата рождения</label>
+              <Input type="date" value={dob} onChange={(e) => setDob(e.target.value)} className="h-9" />
+            </div>
+          </div>
+          <div className="rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground">
+            <p>Дисциплина: <span className="font-medium text-secondary">{user?.coachDiscipline ?? "—"}</span></p>
+            <p>Тренер: <span className="font-medium text-secondary">{user?.coachName ?? "—"}</span></p>
+            <p>Город: <span className="font-medium text-secondary">{user?.city ?? "—"}</span></p>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={onClose} variant="outline" className="flex-1">Отмена</Button>
+            <Button onClick={handleSave} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90">
+              Добавить
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
