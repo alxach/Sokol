@@ -20,6 +20,7 @@ interface AuthContextValue {
   logout: () => void;
   isAdmin: boolean;
   isCoach: boolean;
+  isDirector: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -39,9 +40,16 @@ const MOCK_USERS: Record<string, User> = {
     firstName: "Мария",
     lastName: "П.",
     roles: ["coach"],
-    coachName: "Петров А.В.",
+    coachName: "Петров Александр Владимирович",
     coachDiscipline: "Дзюдо",
     city: "Москва",
+  },
+  "director@sokol.ru": {
+    id: "3",
+    email: "director@sokol.ru",
+    firstName: "Иван",
+    lastName: "Д.",
+    roles: ["director"],
   },
 };
 
@@ -74,9 +82,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAdmin = user?.roles.includes("admin") ?? false;
   const isCoach = user?.roles.includes("coach") ?? false;
+  const isDirector = user?.roles.includes("director") ?? false;
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin, isCoach }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin, isCoach, isDirector }}>
       {children}
     </AuthContext.Provider>
   );

@@ -56,6 +56,38 @@ export const recentActivity = [
   { id: 5, who: "Мария Орлова", action: "обновила медкарту", target: "—", time: "2 дня", tone: "info" as const },
 ];
 
+export type CoachStatus = "Активный" | "Отпуск" | "На больничном";
+
+export interface VacationPeriod {
+  start: string;
+  end: string;
+}
+
+function inPeriod(period: VacationPeriod): boolean {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(period.start + "T00:00:00");
+  const end = new Date(period.end + "T00:00:00");
+  const actualEnd = end < start ? start : end;
+  return today >= start && today <= actualEnd;
+}
+
+export function isOnVacation(vacations: VacationPeriod[] | undefined): boolean {
+  if (!vacations || vacations.length === 0) return false;
+  return vacations.some(inPeriod);
+}
+
+export function isOnSickLeave(sickLeaves: VacationPeriod[] | undefined): boolean {
+  if (!sickLeaves || sickLeaves.length === 0) return false;
+  return sickLeaves.some(inPeriod);
+}
+
+export function getCoachStatus(coach: Coach): CoachStatus {
+  if (isOnSickLeave(coach.sickLeaves)) return "На больничном";
+  if (isOnVacation(coach.vacations)) return "Отпуск";
+  return coach.status;
+}
+
 export interface Coach {
   id: string;
   name: string;
@@ -65,22 +97,29 @@ export interface Coach {
   workload: number;
   rating: number;
   efficiency: number;
-  status: "Активный" | "Отпуск" | "На больничном";
+  status: CoachStatus;
   city: string;
   experience: number;
+  email?: string;
+  phone?: string;
+  telegram?: string;
+  rank?: string;
+  education?: string;
+  vacations?: VacationPeriod[];
+  sickLeaves?: VacationPeriod[];
 }
 
 export const coaches: Coach[] = [
-  { id: "TR-001", name: "Петров Александр Владимирович", disciplines: ["Дзюдо"], groups: 4, athletes: 24, workload: 88, rating: 1842, efficiency: 92, status: "Активный", city: "Москва", experience: 14 },
-  { id: "TR-002", name: "Иванова Елена Сергеевна", disciplines: ["Самбо"], groups: 3, athletes: 18, workload: 75, rating: 1714, efficiency: 85, status: "Активный", city: "Санкт-Петербург", experience: 10 },
-  { id: "TR-003", name: "Сидоров Павел Николаевич", disciplines: ["Бокс", "ММА"], groups: 5, athletes: 30, workload: 95, rating: 1956, efficiency: 90, status: "Активный", city: "Казань", experience: 18 },
-  { id: "TR-004", name: "Орлов Дмитрий Анатольевич", disciplines: ["ММА"], groups: 3, athletes: 15, workload: 65, rating: 1602, efficiency: 78, status: "Активный", city: "Екатеринбург", experience: 8 },
-  { id: "TR-005", name: "Магомедов Рамазан Ахмедович", disciplines: ["Борьба", "Самбо"], groups: 4, athletes: 22, workload: 82, rating: 1788, efficiency: 88, status: "Активный", city: "Махачкала", experience: 12 },
-  { id: "TR-006", name: "Соколова Мария Викторовна", disciplines: ["Дзюдо", "Самбо"], groups: 3, athletes: 20, workload: 70, rating: 1488, efficiency: 82, status: "Активный", city: "Москва", experience: 6 },
-  { id: "TR-007", name: "Лебедев Владимир Игоревич", disciplines: ["Бокс"], groups: 2, athletes: 12, workload: 45, rating: 1405, efficiency: 72, status: "На больничном", city: "Омск", experience: 5 },
-  { id: "TR-008", name: "Кузнецов Андрей Борисович", disciplines: ["Дзюдо", "Борьба"], groups: 4, athletes: 28, workload: 90, rating: 1901, efficiency: 94, status: "Активный", city: "Москва", experience: 20 },
-  { id: "TR-009", name: "Фёдорова Анна Павловна", disciplines: ["Самбо"], groups: 2, athletes: 10, workload: 55, rating: 1422, efficiency: 80, status: "Отпуск", city: "Новосибирск", experience: 4 },
-  { id: "TR-010", name: "Тищенко Григорий Алексеевич", disciplines: ["ММА", "Бокс"], groups: 4, athletes: 26, workload: 85, rating: 2014, efficiency: 96, status: "Активный", city: "Краснодар", experience: 15 },
+  { id: "TR-001", name: "Петров Александр Владимирович", disciplines: ["Дзюдо"], groups: 4, athletes: 24, workload: 88, rating: 1842, efficiency: 92, status: "Активный", city: "Москва", experience: 14, email: "petrov@sokol.ru", phone: "+7 (495) 111-22-33", telegram: "@petrov_av", rank: "Заслуженный тренер России", education: "РГУФКСМиТ, 2005", vacations: [{ start: "2026-07-01", end: "2026-07-14" }, { start: "2026-12-25", end: "2027-01-10" }], sickLeaves: [{ start: "2026-06-20", end: "2026-06-22" }] },
+  { id: "TR-002", name: "Иванова Елена Сергеевна", disciplines: ["Самбо"], groups: 3, athletes: 18, workload: 75, rating: 1714, efficiency: 85, status: "Активный", city: "Санкт-Петербург", experience: 10, email: "ivanova@sokol.ru", phone: "+7 (812) 222-33-44", telegram: "@ivanova_es", rank: "Тренер высшей категории", education: "НГУ им. Лесгафта, 2012" },
+  { id: "TR-003", name: "Сидоров Павел Николаевич", disciplines: ["Бокс", "ММА"], groups: 5, athletes: 30, workload: 95, rating: 1956, efficiency: 90, status: "Активный", city: "Казань", experience: 18, email: "sidorov@sokol.ru", phone: "+7 (843) 333-44-55", telegram: "@sidorov_pn", rank: "Заслуженный тренер России", education: "Поволжская ГАФКСиТ, 2004" },
+  { id: "TR-004", name: "Орлов Дмитрий Анатольевич", disciplines: ["ММА"], groups: 3, athletes: 15, workload: 65, rating: 1602, efficiency: 78, status: "Активный", city: "Екатеринбург", experience: 8, email: "orlov@sokol.ru", phone: "+7 (343) 444-55-66", telegram: "@orlov_da", rank: "Тренер первой категории", education: "УрФУ, 2015" },
+  { id: "TR-005", name: "Магомедов Рамазан Ахмедович", disciplines: ["Борьба", "Самбо"], groups: 4, athletes: 22, workload: 82, rating: 1788, efficiency: 88, status: "Активный", city: "Махачкала", experience: 12, email: "magomedov@sokol.ru", phone: "+7 (8722) 555-66-77", telegram: "@magomedov_ra", rank: "Тренер высшей категории", education: "ДГПУ, 2010" },
+  { id: "TR-006", name: "Соколова Мария Викторовна", disciplines: ["Дзюдо", "Самбо"], groups: 3, athletes: 20, workload: 70, rating: 1488, efficiency: 82, status: "Активный", city: "Москва", experience: 6, email: "sokolova@sokol.ru", phone: "+7 (495) 666-77-88", telegram: "@sokolova_mv", rank: "Тренер второй категории", education: "РГУФКСМиТ, 2017" },
+  { id: "TR-007", name: "Лебедев Владимир Игоревич", disciplines: ["Бокс"], groups: 2, athletes: 12, workload: 45, rating: 1405, efficiency: 72, status: "Активный", city: "Омск", experience: 5, email: "lebedev@sokol.ru", phone: "+7 (3812) 777-88-99", telegram: "@lebedev_vi", rank: "Тренер первой категории", education: "СибГУФК, 2018", sickLeaves: [{ start: "2026-06-01", end: "2026-06-30" }] },
+  { id: "TR-008", name: "Кузнецов Андрей Борисович", disciplines: ["Дзюдо", "Борьба"], groups: 4, athletes: 28, workload: 90, rating: 1901, efficiency: 94, status: "Активный", city: "Москва", experience: 20, email: "kuznetsov@sokol.ru", phone: "+7 (495) 888-99-00", telegram: "@kuznetsov_ab", rank: "Заслуженный тренер России", education: "РГУФКСМиТ, 2002" },
+  { id: "TR-009", name: "Фёдорова Анна Павловна", disciplines: ["Самбо"], groups: 2, athletes: 10, workload: 55, rating: 1422, efficiency: 80, status: "Отпуск", city: "Новосибирск", experience: 4, email: "fedorova@sokol.ru", phone: "+7 (383) 111-22-33", telegram: "@fedorova_ap", rank: "Тренер второй категории", education: "НГУ им. Лесгафта, 2019", vacations: [{ start: "2026-06-01", end: "2026-06-30" }] },
+  { id: "TR-010", name: "Тищенко Григорий Алексеевич", disciplines: ["ММА", "Бокс"], groups: 4, athletes: 26, workload: 85, rating: 2014, efficiency: 96, status: "Активный", city: "Краснодар", experience: 15, email: "tischenko@sokol.ru", phone: "+7 (861) 222-33-44", telegram: "@tischenko_ga", rank: "Тренер высшей категории", education: "КГУФКСТ, 2007" },
 ];
 
 export type EventLevel = "Муниципальный" | "Региональный" | "Федеральный" | "Международный";
@@ -319,6 +358,11 @@ export interface PlanItem {
   participantsCategory: string;
   participantsCount: string;
   month: string;
+  status: PlanStatus;
+  submittedAt?: string;
+  reviewedAt?: string;
+  reviewerComment?: string;
+  reviewerName?: string;
 }
 
 export interface Plan {
@@ -357,18 +401,18 @@ export const plans: Plan[] = [
     submittedAt: "22.01.2026",
     reviewedAt: "25.01.2026",
     items: [
-      { id: "PI-001", categoryId: "3", date: "14.01.2026", month: "Январь", name: "Проведение экскурсии по ЦСЕ приглашены ученики МБОУ СШ №5", description: "Проведение экскурсии по ЦСЕ «Сокол», мастер-класс с тренером и спортсменами ЦСЕ «Сокол» для учеников МБОУ СШ №5 г.Ачинска 3\"А\" класс. Цель — привлечение к посещениям спортивной секции Бокс в ЦСЕ «Сокол» и популяризация вида спорта Бокс", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\" и ученики МБОУ СШ №5 3\"А\" класс.", participantsCount: "8 спортсменов ЦСЕ \"Сокол\" и 14 учащихся МБОУ СШ №5." },
-      { id: "PI-002", categoryId: "4", date: "13.01.2026", month: "Январь", name: "Проведение спортивных мероприятий с работниками предприятий Группы компаний Русал", description: "Цель: укрепление здоровья, физическая подготовка, отработка навыков самозащиты, развитие корпоративной культуры спорта.", location: "ЦСЕ", participantsCategory: "Работники компаний Русал", participantsCount: "5" },
-      { id: "PI-003", categoryId: "4", date: "30.01.2026", month: "Январь", name: "Проведение на территории ЦСЕ турнира по Боксу среди спортсменов ЦСЕ \"Сокол\" и клубов г.Ачинска", description: "Проведение на территории ЦСЕ турнира по боксу среди мальчиков и девочек 2012-2013г.р. и 2014-2015г.р. Цель: Выявление лучших спортсменов, привлечение к спорту, популяризация ЦСЕ и вида спорта Бокс.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\" и приглашённых клубов г. Ачинска", participantsCount: "20 спортсменов ЦСЕ \"Сокол\" и 34 спортсмена приглашённых клубов г.Ачинска" },
-      { id: "PI-004", categoryId: "5", date: "21.01.2026", month: "Январь", name: "Лекция: «Оказание первой медицинской помощи при ушибе»", description: "Формат лекции: теория, лекцию проводит врач Лебедева В.Н. Цель: Формирование знаний и навыков по сохранению здоровья.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\"", participantsCount: "18" },
-      { id: "PI-005", categoryId: "3", date: "06.02.2026", month: "Февраль", name: "Проведение урока физкультуры и мастер-класс со спортсменами ЦСЕ \"Сокол\"", description: "Проведение урока физкультуры и мастер-класс спортсменами ЦСЕ «Сокол» для учащихся МБОУ СШ №4. Цель — Развитие физ.качеств, укрепление здоровья, изучение техники Бокса, популяризация ЦСЕ и вида спорта Бокс.", location: "Спорт.зал МБОУ СШ №4", participantsCategory: "Спортсмены ЦСЕ \"Сокол\" и ученики МБОУ СШ №4 7\"А\" класс.", participantsCount: "4 спортсмена ЦСЕ \"Сокол\" и 20 учеников МБОУ СШ №4" },
-      { id: "PI-006", categoryId: "4", date: "03.02.2026", month: "Февраль", name: "Проведение спортивных мероприятий с работниками предприятий Группы компаний Русал", description: "Цель: укрепление здоровья, физическая подготовка, отработка навыков самозащиты, развитие корпоративной культуры спорта.", location: "ЦСЕ", participantsCategory: "Работники компаний Русал", participantsCount: "5" },
-      { id: "PI-007", categoryId: "4", date: "14.02.2026", month: "Февраль", name: "Проведение мастер-класса для спортсменов ЦСЕ \"Сокол\" с мастером спорта СССР по Боксу Самойленко С.Н.", description: "Проведение мастер-класса для спортсменов ЦСЕ «Сокол» с участием мастера спорта СССР по Боксу 1989 г. Самойленко С.Н. Цель: привлечение к спорту, изучение техники Бокса, популяризация ЦСЕ и вида спорта Бокс.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\"", participantsCount: "20" },
-      { id: "PI-008", categoryId: "5", date: "18.02.2026", month: "Февраль", name: "Поход со спортсменами ЦСЕ \"Сокол\" в музей г.Ачинска", description: "Приобщение к культурно-массовым мероприятиям. Цель: Изучение истории г.Ачинска и страны, развитие чувства патриотизма в подрастающем поколении.", location: "Музей г.Ачинска", participantsCategory: "Спортсмены ЦСЕ \"Сокол\"", participantsCount: "20" },
-      { id: "PI-009", categoryId: "3", date: "11.03.2026", month: "Март", name: "Проведение экскурсии по ЦСЕ приглашены ученики МБОУ СШ №7", description: "Проведение урока физкультуры и мастер-класса со спортсменами ЦСЕ «Сокол» для учащихся МБОУ СШ №7, 5-7 классы. Цель — Развитие физ.качеств, укрепление здоровья, изучение техники Бокса, популяризация ЦСЕ и вида спорта Бокс.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\" и ученики МБОУ СШ №7 5-7 классы.", participantsCount: "20 спортсменов ЦСЕ \"Сокол\" и 30-40 учащихся МБОУ СШ №7." },
-      { id: "PI-010", categoryId: "4", date: "03.03.2026", month: "Март", name: "Проведение спортивных мероприятий с работниками предприятий Группы компаний Русал", description: "Цель: укрепление здоровья, физическая подготовка, отработка навыков самозащиты, развитие корпоративной культуры спорта.", location: "ЦСЕ", participantsCategory: "Работники компаний Русал", participantsCount: "5" },
-      { id: "PI-011", categoryId: "4", date: "20.03.2026", month: "Март", name: "Проведение на территории ЦСЕ турнира по Боксу среди спортсменов ЦСЕ \"Сокол\" и клубов г.Ачинска", description: "Проведение на территории ЦСЕ турнира по боксу среди мальчиков и девочек 2012-2013г.р. и 2014-2015г.р. Цель: Выявление лучших спортсменов, привлечение к спорту, популяризация ЦСЕ и вида спорта Бокс.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\" и приглашённых клубов г. Ачинска", participantsCount: "30 спортсменов ЦСЕ \"Сокол\" и 30 спортсменов приглашённых клубов г.Ачинска" },
-      { id: "PI-012", categoryId: "5", date: "07.03.2026", month: "Март", name: "Лекция: «Здоровое питание спортсмена»", description: "Формат лекции: теория, лекцию будут проводить студенты медицинского техникума. Цель: Развить знания о здоровом питании спортсменов.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\"", participantsCount: "20" },
+      { id: "PI-001", categoryId: "3", date: "14.01.2026", month: "Январь", name: "Проведение экскурсии по ЦСЕ приглашены ученики МБОУ СШ №5", description: "Проведение экскурсии по ЦСЕ «Сокол», мастер-класс с тренером и спортсменами ЦСЕ «Сокол» для учеников МБОУ СШ №5 г.Ачинска 3\"А\" класс. Цель — привлечение к посещениям спортивной секции Бокс в ЦСЕ «Сокол» и популяризация вида спорта Бокс", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\" и ученики МБОУ СШ №5 3\"А\" класс.", participantsCount: "8 спортсменов ЦСЕ \"Сокол\" и 14 учащихся МБОУ СШ №5.", status: "approved", reviewedAt: "25.01.2026" },
+      { id: "PI-002", categoryId: "4", date: "13.01.2026", month: "Январь", name: "Проведение спортивных мероприятий с работниками предприятий Группы компаний Русал", description: "Цель: укрепление здоровья, физическая подготовка, отработка навыков самозащиты, развитие корпоративной культуры спорта.", location: "ЦСЕ", participantsCategory: "Работники компаний Русал", participantsCount: "5", status: "approved", reviewedAt: "25.01.2026" },
+      { id: "PI-003", categoryId: "4", date: "30.01.2026", month: "Январь", name: "Проведение на территории ЦСЕ турнира по Боксу среди спортсменов ЦСЕ \"Сокол\" и клубов г.Ачинска", description: "Проведение на территории ЦСЕ турнира по боксу среди мальчиков и девочек 2012-2013г.р. и 2014-2015г.р. Цель: Выявление лучших спортсменов, привлечение к спорту, популяризация ЦСЕ и вида спорта Бокс.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\" и приглашённых клубов г. Ачинска", participantsCount: "20 спортсменов ЦСЕ \"Сокол\" и 34 спортсмена приглашённых клубов г.Ачинска", status: "approved", reviewedAt: "25.01.2026" },
+      { id: "PI-004", categoryId: "5", date: "21.01.2026", month: "Январь", name: "Лекция: «Оказание первой медицинской помощи при ушибе»", description: "Формат лекции: теория, лекцию проводит врач Лебедева В.Н. Цель: Формирование знаний и навыков по сохранению здоровья.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\"", participantsCount: "18", status: "approved", reviewedAt: "25.01.2026" },
+      { id: "PI-005", categoryId: "3", date: "06.02.2026", month: "Февраль", name: "Проведение урока физкультуры и мастер-класс со спортсменами ЦСЕ \"Сокол\"", description: "Проведение урока физкультуры и мастер-класс спортсменами ЦСЕ «Сокол» для учащихся МБОУ СШ №4. Цель — Развитие физ.качеств, укрепление здоровья, изучение техники Бокса, популяризация ЦСЕ и вида спорта Бокс.", location: "Спорт.зал МБОУ СШ №4", participantsCategory: "Спортсмены ЦСЕ \"Сокол\" и ученики МБОУ СШ №4 7\"А\" класс.", participantsCount: "4 спортсмена ЦСЕ \"Сокол\" и 20 учеников МБОУ СШ №4", status: "approved", reviewedAt: "25.01.2026" },
+      { id: "PI-006", categoryId: "4", date: "03.02.2026", month: "Февраль", name: "Проведение спортивных мероприятий с работниками предприятий Группы компаний Русал", description: "Цель: укрепление здоровья, физическая подготовка, отработка навыков самозащиты, развитие корпоративной культуры спорта.", location: "ЦСЕ", participantsCategory: "Работники компаний Русал", participantsCount: "5", status: "approved", reviewedAt: "25.01.2026" },
+      { id: "PI-007", categoryId: "4", date: "14.02.2026", month: "Февраль", name: "Проведение мастер-класса для спортсменов ЦСЕ \"Сокол\" с мастером спорта СССР по Боксу Самойленко С.Н.", description: "Проведение мастер-класса для спортсменов ЦСЕ «Сокол» с участием мастера спорта СССР по Боксу 1989 г. Самойленко С.Н. Цель: привлечение к спорту, изучение техники Бокса, популяризация ЦСЕ и вида спорта Бокс.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\"", participantsCount: "20", status: "approved", reviewedAt: "25.01.2026" },
+      { id: "PI-008", categoryId: "5", date: "18.02.2026", month: "Февраль", name: "Поход со спортсменами ЦСЕ \"Сокол\" в музей г.Ачинска", description: "Приобщение к культурно-массовым мероприятиям. Цель: Изучение истории г.Ачинска и страны, развитие чувства патриотизма в подрастающем поколении.", location: "Музей г.Ачинска", participantsCategory: "Спортсмены ЦСЕ \"Сокол\"", participantsCount: "20", status: "approved", reviewedAt: "25.01.2026" },
+      { id: "PI-009", categoryId: "3", date: "11.03.2026", month: "Март", name: "Проведение экскурсии по ЦСЕ приглашены ученики МБОУ СШ №7", description: "Проведение урока физкультуры и мастер-класса со спортсменами ЦСЕ «Сокол» для учащихся МБОУ СШ №7, 5-7 классы. Цель — Развитие физ.качеств, укрепление здоровья, изучение техники Бокса, популяризация ЦСЕ и вида спорта Бокс.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\" и ученики МБОУ СШ №7 5-7 классы.", participantsCount: "20 спортсменов ЦСЕ \"Сокол\" и 30-40 учащихся МБОУ СШ №7.", status: "approved", reviewedAt: "25.01.2026" },
+      { id: "PI-010", categoryId: "4", date: "03.03.2026", month: "Март", name: "Проведение спортивных мероприятий с работниками предприятий Группы компаний Русал", description: "Цель: укрепление здоровья, физическая подготовка, отработка навыков самозащиты, развитие корпоративной культуры спорта.", location: "ЦСЕ", participantsCategory: "Работники компаний Русал", participantsCount: "5", status: "approved", reviewedAt: "25.01.2026" },
+      { id: "PI-011", categoryId: "4", date: "20.03.2026", month: "Март", name: "Проведение на территории ЦСЕ турнира по Боксу среди спортсменов ЦСЕ \"Сокол\" и клубов г.Ачинска", description: "Проведение на территории ЦСЕ турнира по боксу среди мальчиков и девочек 2012-2013г.р. и 2014-2015г.р. Цель: Выявление лучших спортсменов, привлечение к спорту, популяризация ЦСЕ и вида спорта Бокс.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\" и приглашённых клубов г. Ачинска", participantsCount: "30 спортсменов ЦСЕ \"Сокол\" и 30 спортсменов приглашённых клубов г.Ачинска", status: "approved", reviewedAt: "25.01.2026" },
+      { id: "PI-012", categoryId: "5", date: "07.03.2026", month: "Март", name: "Лекция: «Здоровое питание спортсмена»", description: "Формат лекции: теория, лекцию будут проводить студенты медицинского техникума. Цель: Развить знания о здоровом питании спортсменов.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ \"Сокол\"", participantsCount: "20", status: "approved", reviewedAt: "25.01.2026" },
     ],
   },
   {
@@ -384,7 +428,7 @@ export const plans: Plan[] = [
     status: "draft",
     createdAt: "01.04.2026",
     items: [
-      { id: "PI-101", categoryId: "3", date: "17.04.2026", month: "Апрель", name: "Экскурсия для школьников МБОУ СШ №15", description: "Проведение экскурсии по ЦСЕ, мастер-класс с тренером и спортсменами ЦСЕ «Сокол» для учеников МБОУ СШ №15 г.Ачинска 5\"А\" класс.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ и ученики", participantsCount: "10+20" },
+      { id: "PI-101", categoryId: "3", date: "17.04.2026", month: "Апрель", name: "Экскурсия для школьников МБОУ СШ №15", description: "Проведение экскурсии по ЦСЕ, мастер-класс с тренером и спортсменами ЦСЕ «Сокол» для учеников МБОУ СШ №15 г.Ачинска 5\"А\" класс.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ и ученики", participantsCount: "10+20", status: "draft" },
     ],
   },
   {
@@ -401,8 +445,51 @@ export const plans: Plan[] = [
     createdAt: "10.03.2026",
     submittedAt: "15.03.2026",
     items: [
-      { id: "PI-201", categoryId: "3", date: "10.01.2026", month: "Январь", name: "Мастер-класс по дзюдо для школьников", description: "Открытый урок дзюдо для учащихся начальных классов.", location: "ЦСЕ", participantsCategory: "Школьники", participantsCount: "25" },
-      { id: "PI-202", categoryId: "4", date: "25.02.2026", month: "Февраль", name: "Товарищеский турнир по дзюдо", description: "Турнир между филиалами ЦСЕ.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ", participantsCount: "40" },
+      { id: "PI-201", categoryId: "3", date: "10.01.2026", month: "Январь", name: "Мастер-класс по дзюдо для школьников", description: "Открытый урок дзюдо для учащихся начальных классов.", location: "ЦСЕ", participantsCategory: "Школьники", participantsCount: "25", status: "submitted", submittedAt: "15.03.2026" },
+      { id: "PI-202", categoryId: "4", date: "25.02.2026", month: "Февраль", name: "Товарищеский турнир по дзюдо", description: "Турнир между филиалами ЦСЕ.", location: "ЦСЕ", participantsCategory: "Спортсмены ЦСЕ", participantsCount: "40", status: "submitted", submittedAt: "15.03.2026" },
     ],
   },
 ];
+
+export interface Center {
+  id: string;
+  name: string;
+  city: string;
+  address: string;
+  phone: string;
+  athletes: number;
+  coaches: number;
+  groups: number;
+  gold: number;
+  silver: number;
+  bronze: number;
+  activeAthletes: number;
+  avgEfficiency: number;
+}
+
+export const centers: Center[] = [
+  { id: "center-1", name: "ЦСЕ «Сокол» — Москва", city: "Москва", address: "ул. Спортивная, 12", phone: "+7 (495) 111-11-11", athletes: 28, coaches: 4, groups: 7, gold: 42, silver: 18, bronze: 9, activeAthletes: 24, avgEfficiency: 90 },
+  { id: "center-2", name: "ЦСЕ «Сокол» — Казань", city: "Казань", address: "ул. Батыршина, 5", phone: "+7 (843) 222-22-22", athletes: 22, coaches: 3, groups: 6, gold: 35, silver: 14, bronze: 7, activeAthletes: 18, avgEfficiency: 85 },
+  { id: "center-3", name: "ЦСЕ «Сокол» — Екатеринбург", city: "Екатеринбург", address: "пр. Ленина, 88", phone: "+7 (343) 333-33-33", athletes: 15, coaches: 2, groups: 4, gold: 18, silver: 9, bronze: 6, activeAthletes: 12, avgEfficiency: 78 },
+];
+
+export function getCenterIdByCoachName(coachName: string): string {
+  const lastName = coachName.split(" ")[0];
+  const coach = coaches.find((c) => c.name.startsWith(lastName));
+  return coach ? getCenterIdByCity(coach.city) : "center-1";
+}
+
+export function getCenterIdByCity(city: string): string {
+  const map: Record<string, string> = {
+    "Москва": "center-1",
+    "Санкт-Петербург": "center-1",
+    "Казань": "center-2",
+    "Екатеринбург": "center-3",
+    "Махачкала": "center-2",
+    "Краснодар": "center-3",
+    "Новосибирск": "center-3",
+    "Омск": "center-3",
+    "Уфа": "center-2",
+  };
+  return map[city] ?? "center-1";
+}

@@ -8,7 +8,7 @@ from app.models.athlete import (
 )
 from app.models.attendance import Attendance, AttendanceQRCode
 from app.models.audit import AuditLog
-from app.models.coach import Coach, CoachCategory
+from app.models.coach import Coach, CoachCategory, CoachVacation
 from app.models.document import Document, DocumentApproval, DocumentTemplate
 from app.models.event import Competition, Event, Participant, Result
 from app.models.group import Group, GroupMember

@@ -25,6 +25,12 @@ class Coach(TimestampMixin, Base):
     categories: Mapped[list["CoachCategory"]] = relationship(
         back_populates="coach", cascade="all, delete-orphan",
     )
+    vacations: Mapped[list["CoachVacation"]] = relationship(
+        back_populates="coach", cascade="all, delete-orphan",
+    )
+    sick_leaves: Mapped[list["CoachSickLeave"]] = relationship(
+        back_populates="coach", cascade="all, delete-orphan",
+    )
 
 
 class CoachCategory(TimestampMixin, Base):
@@ -39,3 +45,27 @@ class CoachCategory(TimestampMixin, Base):
     document_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     coach: Mapped["Coach"] = relationship(back_populates="categories")
+
+
+class CoachVacation(TimestampMixin, Base):
+    __tablename__ = "coach_vacations"
+
+    coach_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coaches.id"), nullable=False,
+    )
+    start_date: Mapped[Date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[Date] = mapped_column(Date, nullable=False)
+
+    coach: Mapped["Coach"] = relationship(back_populates="vacations")
+
+
+class CoachSickLeave(TimestampMixin, Base):
+    __tablename__ = "coach_sick_leaves"
+
+    coach_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coaches.id"), nullable=False,
+    )
+    start_date: Mapped[Date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[Date] = mapped_column(Date, nullable=False)
+
+    coach: Mapped["Coach"] = relationship(back_populates="sick_leaves")
