@@ -2,4 +2,4 @@
 set -e
 
 echo "Starting frontend server..."
-exec node server.js
+exec node .output/server/index.mjs

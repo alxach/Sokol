@@ -1,43 +1,32 @@
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+
 import { cn } from "@/lib/utils";
 
-const variants = {
-  success: "bg-green-100 text-green-800",
-  warning: "bg-amber-100 text-amber-800",
-  danger: "bg-red-100 text-red-800",
-  info: "bg-brand-blue/10 text-brand-blue",
-  neutral: "bg-neutral-100 text-neutral-700",
-} as const;
+const badgeVariants = cva(
+  "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  {
+    variants: {
+      variant: {
+        default: "border-transparent bg-primary text-primary-foreground shadow hover:bg-primary/80",
+        secondary:
+          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        destructive:
+          "border-transparent bg-destructive text-destructive-foreground shadow hover:bg-destructive/80",
+        outline: "text-foreground",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  },
+);
 
-export function Badge({
-  variant = "neutral",
-  children,
-}: {
-  variant?: keyof typeof variants;
-  children: React.ReactNode;
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-        variants[variant],
-      )}
-    >
-      {children}
-    </span>
-  );
+export interface BadgeProps
+  extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
+
+function Badge({ className, variant, ...props }: BadgeProps) {
+  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
 }
 
-export function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, "success" | "warning" | "danger" | "info" | "neutral"> = {
-    ACTIVE: "success",
-    ONLINE: "success",
-    submitted: "success",
-    VACATION: "warning",
-    INJURY: "danger",
-    OFFLINE: "neutral",
-    draft: "warning",
-    missing: "danger",
-  };
-
-  return <Badge variant={variants[status] ?? "neutral"}>{status}</Badge>;
-}
+export { Badge, badgeVariants };

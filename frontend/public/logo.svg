@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 80" fill="none">
   <!-- Falcon emblem -->
   <g transform="translate(4, 8)">
-    <!-- Body / wing shape - stylized falcon -->
+    <!-- Body / wing shape -->
     <path d="M28 2 C36 6 44 16 48 28 C50 34 48 40 44 44 C40 48 34 50 28 50 C22 50 16 48 12 44 C8 40 6 34 4 28 C2 22 4 14 8 8 C12 4 20 0 28 2Z"
           fill="#467FC0"/>
     <!-- Head -->
