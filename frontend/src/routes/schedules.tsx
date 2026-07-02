@@ -15,6 +15,7 @@ import {
   groups as allGroups,
   getCenterIdByCoachName,
   getPeriodStatus,
+  getGroupName,
   archiveOtherActivePeriods,
   freshSchedulePeriodId,
   freshScheduleId,
@@ -61,7 +62,7 @@ function SchedulesPage() {
 
   const visiblePeriods = useMemo(() => {
     let periods = allPeriods.filter((p) => {
-      if (selectedGroup !== "Все" && p.group !== selectedGroup) return false;
+      if (selectedGroup !== "Все" && p.groupId !== selectedGroup) return false;
       if (isCoach && p.coachId !== user?.id) return false;
       if (isDirector && selectedCenterId && getCenterIdByCoachName(p.coachName) !== selectedCenterId) return false;
       return true;
@@ -178,7 +179,7 @@ function SchedulesPage() {
               >
                 <option value="Все">Все группы</option>
                 {userGroups.map((g) => (
-                  <option key={g.id} value={g.name}>{g.name}</option>
+                  <option key={g.id} value={g.id}>{g.name}</option>
                 ))}
               </select>
               <select
@@ -211,7 +212,7 @@ function SchedulesPage() {
                 >
                   <div className="flex items-start justify-between">
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-display text-base font-bold text-secondary">{p.group}</h3>
+                      <h3 className="font-display text-base font-bold text-secondary">{getGroupName(p.groupId)}</h3>
                       <p className="text-xs text-muted-foreground">{p.coachName}</p>
                     </div>
                     <StatusBadge status={effectiveStatus} />
@@ -296,7 +297,7 @@ function SchedulesPage() {
                               <span>–</span>
                               <span className="font-medium text-foreground">{s.timeEnd}</span>
                             </div>
-                            <p className="text-sm font-medium text-secondary">{s.group}</p>
+                            <p className="text-sm font-medium text-secondary">{getGroupName(s.groupId)}</p>
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                               <span className="flex items-center gap-1">
                                 <MapPin className="h-3 w-3" /> {s.room}
@@ -392,7 +393,7 @@ function PeriodDetailView({
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="font-display text-2xl font-bold text-secondary">{period.group}</h2>
+              <h2 className="font-display text-2xl font-bold text-secondary">{getGroupName(period.groupId)}</h2>
               <StatusBadge status={effectiveStatus} />
             </div>
             <p className="text-sm text-muted-foreground">
@@ -435,7 +436,7 @@ function PeriodDetailView({
                       <span>–</span>
                       <span className="font-medium text-foreground">{s.timeEnd}</span>
                     </div>
-                    <p className="text-sm font-medium text-secondary">{s.group}</p>
+                    <p className="text-sm font-medium text-secondary">{getGroupName(s.groupId)}</p>
                     <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <MapPin className="h-3 w-3" /> {s.room}
@@ -528,7 +529,7 @@ function CreatePeriodModal({
       id: periodId,
       coachId,
       coachName,
-      group: selectedGroup.name,
+      groupId: selectedGroup.id,
       discipline: selectedGroup.discipline,
       periodStart,
       periodEnd,
@@ -543,7 +544,7 @@ function CreatePeriodModal({
         periodId,
         coachId,
         coachName,
-        group: selectedGroup.name,
+        groupId: selectedGroup.id,
         discipline: selectedGroup.discipline,
         dayOfWeek: day,
         timeStart: t.start,
@@ -577,7 +578,7 @@ function CreatePeriodModal({
             {(() => {
               const selected = userGroups.find((g) => g.id === groupId);
               const hasActive = selected && allPeriods.some(
-                (p) => p.group === selected.name && p.id !== "new" && getPeriodStatus(p) === "active",
+                (p) => p.groupId === selected.id && p.id !== "new" && getPeriodStatus(p) === "active",
               );
               return hasActive ? (
                 <div className="mt-2 flex items-start gap-2 rounded-lg border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/10 p-2.5 text-xs text-muted-foreground">
@@ -729,7 +730,7 @@ function EditPeriodModal({
             </div>
           </div>
           <div className="rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground">
-            <p>Группа: <strong>{period.group}</strong></p>
+            <p>Группа: <strong>{getGroupName(period.groupId)}</strong></p>
             <p>Дисциплина: <strong>{period.discipline}</strong></p>
             <p>Статус: <strong>{period.status}</strong></p>
           </div>
@@ -772,7 +773,7 @@ function ScheduleFormModal({
         periodId: period.id,
         coachId: period.coachId,
         coachName: period.coachName,
-        group: period.group,
+        groupId: period.groupId,
         discipline: period.discipline,
         dayOfWeek,
         timeStart,
@@ -821,7 +822,7 @@ function ScheduleFormModal({
             <Input value={room} onChange={(e) => setRoom(e.target.value)} placeholder="Зал А, спортзал…" className="h-9" />
           </div>
           <div className="rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground">
-            <p>Группа: <strong>{period.group}</strong></p>
+            <p>Группа: <strong>{getGroupName(period.groupId)}</strong></p>
             <p>Период: {period.periodStart} — {period.periodEnd}</p>
           </div>
           <Button onClick={handleSave} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">

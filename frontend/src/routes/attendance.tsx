@@ -19,6 +19,7 @@ import {
   schedules, athletes, attendanceRecords,
   type AttendanceStatus, type Discipline,
   freshAttendanceId, persistAttendanceRecords,
+  getGroupName,
 } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/attendance")({
@@ -119,13 +120,13 @@ function AttendancePage() {
   const [filterGroup, setFilterGroup] = useState<string>("Все");
 
   const uniqueCoaches = [...new Set(schedules.map((s) => s.coachName))];
-  const uniqueGroups = [...new Set(schedules.map((s) => s.group))];
+  const uniqueGroups = [...new Set(schedules.map((s) => s.groupId))];
 
   const filteredSchedules = useMemo(() => {
     let list = schedules;
     if (filterDiscipline !== "Все") list = list.filter((s) => s.discipline === filterDiscipline);
     if (filterCoach !== "Все") list = list.filter((s) => s.coachName === filterCoach);
-    if (filterGroup !== "Все") list = list.filter((s) => s.group === filterGroup);
+    if (filterGroup !== "Все") list = list.filter((s) => s.groupId === filterGroup);
     return list;
   }, [filterDiscipline, filterCoach, filterGroup]);
 
@@ -133,12 +134,12 @@ function AttendancePage() {
     const filteredIds = new Set(filteredSchedules.map((s) => s.id));
 
     const rows = viewMode === "groups"
-      ? [...new Set(filteredSchedules.map((s) => s.group))]
+      ? [...new Set(filteredSchedules.map((s) => s.groupId))]
       : [...new Set(filteredSchedules.map((s) => s.coachName))];
 
     return rows.map((label) => {
       const rowSchedules = viewMode === "groups"
-        ? filteredSchedules.filter((s) => s.group === label)
+        ? filteredSchedules.filter((s) => s.groupId === label)
         : filteredSchedules.filter((s) => s.coachName === label);
 
       const days = dayNames.map((_, di) => {
@@ -303,7 +304,7 @@ function AttendancePage() {
               className="h-9 rounded-lg border border-border bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               <option value="Все">Все</option>
-              {uniqueGroups.map((g) => <option key={g} value={g}>{g}</option>)}
+              {uniqueGroups.map((g) => <option key={g} value={g}>{getGroupName(g)}</option>)}
             </select>
           </div>
         </div>
@@ -337,7 +338,7 @@ function AttendancePage() {
                 {heatmapData.map((row) => (
                   <tr key={row.label} className="transition hover:bg-muted/20">
                     <td className="whitespace-nowrap px-4 py-3">
-                      <span className="font-medium text-secondary">{row.label}</span>
+                      <span className="font-medium text-secondary">{viewMode === "groups" ? getGroupName(row.label) : row.label}</span>
                       <span className="ml-2 text-[10px] text-muted-foreground">{row.discipline}</span>
                     </td>
                     {row.days.map((day) => (
@@ -393,7 +394,7 @@ function AttendancePage() {
               <div className="border-b border-border px-5 py-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-display text-lg font-bold text-secondary">{selectedSchedule.group}</h3>
+                    <h3 className="font-display text-lg font-bold text-secondary">{getGroupName(selectedSchedule.groupId)}</h3>
                     <p className="text-sm text-muted-foreground">
                       {selectedSchedule.discipline} · {selectedSchedule.timeStart}–{selectedSchedule.timeEnd} · {selectedSchedule.room}
                     </p>
@@ -532,7 +533,7 @@ function AttendancePage() {
                   >
                     <div className="flex items-center justify-between">
                       <span className={`font-medium ${isSelected ? "text-primary" : "text-secondary"}`}>
-                        {s.group}
+                        {getGroupName(s.groupId)}
                       </span>
                       {recordsOnDate.length > 0 && (
                         <span className="text-[10px] text-muted-foreground">

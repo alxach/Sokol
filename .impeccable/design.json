@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-02T12:00:00.000Z",
+  "title": "Design System: СОКОЛ",
+  "extensions": {
+    "colorMeta": {
+      "sport-blue": {
+        "role": "primary",
+        "displayName": "Sport Blue",
+        "canonical": "oklch(0.605 0.128 252)",
+        "tonalRamp": [
+          "oklch(0.2 0.05 252)",
+          "oklch(0.3 0.07 252)",
+          "oklch(0.4 0.09 252)",
+          "oklch(0.5 0.11 252)",
+          "oklch(0.605 0.128 252)",
+          "oklch(0.7 0.1 252)",
+          "oklch(0.82 0.06 252)",
+          "oklch(0.95 0.02 252)"
+        ]
+      },
+      "deep-navy": {
+        "role": "secondary",
+        "displayName": "Deep Navy",
+        "canonical": "oklch(0.215 0.085 264)",
+        "tonalRamp": [
+          "oklch(0.1 0.04 264)",
+          "oklch(0.215 0.085 264)",
+          "oklch(0.28 0.08 264)",
+          "oklch(0.35 0.075 264)",
+          "oklch(0.45 0.07 264)",
+          "oklch(0.6 0.05 264)",
+          "oklch(0.78 0.03 264)",
+          "oklch(0.92 0.015 250)"
+        ]
+      },
+      "signal-orange": {
+        "role": "accent",
+        "displayName": "Signal Orange",
+        "canonical": "oklch(0.78 0.155 70)",
+        "tonalRamp": [
+          "oklch(0.25 0.06 70)",
+          "oklch(0.38 0.09 70)",
+          "oklch(0.5 0.12 70)",
+          "oklch(0.62 0.14 70)",
+          "oklch(0.78 0.155 70)",
+          "oklch(0.85 0.1 70)",
+          "oklch(0.92 0.05 70)",
+          "oklch(0.97 0.02 70)"
+        ]
+      },
+      "neutral-bg": {
+        "role": "neutral",
+        "displayName": "Light Wash",
+        "canonical": "oklch(0.985 0.004 250)",
+        "tonalRamp": [
+          "oklch(0.2 0.05 260)",
+          "oklch(0.5 0.03 256)",
+          "oklch(0.7 0.02 254)",
+          "oklch(0.85 0.015 252)",
+          "oklch(0.92 0.012 250)",
+          "oklch(0.96 0.008 250)",
+          "oklch(0.985 0.004 250)",
+          "oklch(1 0 0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero headlines and page titles. Manrope bold only."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "All body text, table cells, descriptions, paragraphs. Inter only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card-shadow",
+        "value": "0 1px 2px oklch(0.2 0.05 260 / 0.04), 0 8px 24px -12px oklch(0.2 0.05 260 / 0.08)",
+        "purpose": "Subtle separation for cards and containers. Barely perceptible."
+      },
+      {
+        "name": "glow-shadow",
+        "value": "0 10px 40px -10px oklch(0.55 0.13 250 / 0.45)",
+        "purpose": "Hover glow under primary buttons and accent elements only."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Default transition for colour and background state changes."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main call-to-action button. Sport Blue background, white text, rounded-md.",
+      "html": "<button class=\"ds-btn-primary\">Сохранить</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 9px 16px; border-radius: calc(0.75rem - 2px); border: none; font-family: Inter, system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; white-space: nowrap; cursor: pointer; color: oklch(0.99 0 0); background: oklch(0.605 0.128 252); transition: background 150ms, box-shadow 150ms; } .ds-btn-primary:hover { background: oklch(0.545 0.115 252); box-shadow: 0 10px 40px -10px oklch(0.55 0.13 250 / 0.45); } .ds-btn-primary:focus-visible { outline: 2px solid oklch(0.605 0.128 252); outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary outline button. Transparent background with border.",
+      "html": "<button class=\"ds-btn-outline\">Отмена</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 9px 16px; border-radius: calc(0.75rem - 2px); border: 1px solid oklch(0.92 0.012 250); font-family: Inter, system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; white-space: nowrap; cursor: pointer; color: oklch(0.215 0.085 264); background: transparent; transition: background 150ms, color 150ms; } .ds-btn-outline:hover { background: oklch(0.78 0.155 70); color: oklch(0.215 0.085 264); } .ds-btn-outline:focus-visible { outline: 2px solid oklch(0.605 0.128 252); outline-offset: 2px; } .ds-btn-outline:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Minimal ghost button. Transparent, hover fills muted.",
+      "html": "<button class=\"ds-btn-ghost\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9\"/><path d=\"M13.73 21a2 2 0 0 1-3.46 0\"/></svg></button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: calc(0.75rem - 2px); border: none; cursor: pointer; color: oklch(0.215 0.085 264); background: transparent; transition: background 150ms; } .ds-btn-ghost:hover { background: oklch(0.96 0.008 250); } .ds-btn-ghost:focus-visible { outline: 2px solid oklch(0.605 0.128 252); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Standard text input with border, focus ring, and placeholder.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Поиск спортсменов…\" />",
+      "css": ".ds-input { display: flex; width: 100%; height: 36px; padding: 8px 12px; border-radius: calc(0.75rem - 2px); border: 1px solid oklch(0.92 0.012 250); background: oklch(0.985 0.004 250); font-family: Inter, system-ui, sans-serif; font-size: 0.875rem; color: oklch(0.215 0.085 264); transition: border-color 150ms, box-shadow 150ms; box-sizing: border-box; } .ds-input::placeholder { color: oklch(0.5 0.03 256); } .ds-input:focus { outline: none; border-color: oklch(0.605 0.128 252); box-shadow: 0 0 0 2px oklch(0.605 0.128 252 / 0.2); } .ds-input:disabled { opacity: 0.5; cursor: not-allowed; } .ds-input[aria-invalid=\"true\"] { border-color: oklch(0.6 0.22 25); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Content card with white background, rounded-lg, subtle shadow.",
+      "html": "<div class=\"ds-card\"><h3 class=\"ds-card-title\">Название карточки</h3><p class=\"ds-card-body\">Содержимое карточки. Здесь могут быть данные, таблицы, графики.</p></div>",
+      "css": ".ds-card { background: oklch(1 0 0); border-radius: 0.75rem; padding: 24px; box-shadow: 0 1px 2px oklch(0.2 0.05 260 / 0.04), 0 8px 24px -12px oklch(0.2 0.05 260 / 0.08); border: none; } .ds-card-title { font-family: Manrope, Inter, system-ui, sans-serif; font-weight: 600; font-size: 1rem; line-height: 1.4; letter-spacing: -0.02em; color: oklch(0.215 0.085 264); margin: 0 0 8px 0; } .ds-card-body { font-family: Inter, system-ui, sans-serif; font-weight: 400; font-size: 0.875rem; line-height: 1.5; color: oklch(0.5 0.03 256); margin: 0; }"
+    },
+    {
+      "name": "Badge/Status Chip",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Small status indicator. Success, destructive, outline variants.",
+      "html": "<span class=\"ds-badge ds-badge-success\">Активно</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 0.5rem; font-family: Inter, system-ui, sans-serif; font-size: 0.75rem; font-weight: 500; white-space: nowrap; } .ds-badge-success { background: oklch(0.65 0.16 155); color: oklch(0.99 0 0); } .ds-badge-destructive { background: oklch(0.6 0.22 25); color: oklch(0.99 0 0); } .ds-badge-outline { background: transparent; border: 1px solid oklch(0.92 0.012 250); color: oklch(0.5 0.03 256); }"
+    },
+    {
+      "name": "Navigation Sidebar Item",
+      "kind": "nav",
+      "refersTo": "sidebar",
+      "description": "Sidebar navigation item with dark navy background.",
+      "html": "<nav class=\"ds-sidebar\"><a class=\"ds-nav-item ds-nav-active\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\"/></svg><span>Дашборд</span></a><a class=\"ds-nav-item\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/></svg><span>Спортсмены</span></a></nav>",
+      "css": ".ds-sidebar { display: flex; flex-direction: column; gap: 2px; background: oklch(0.215 0.085 264); padding: 8px; border-radius: 0.75rem; font-family: Inter, system-ui, sans-serif; } .ds-nav-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: calc(0.75rem - 2px); text-decoration: none; font-size: 0.875rem; font-weight: 500; color: oklch(0.92 0.015 250 / 0.7); transition: background 150ms, color 150ms; } .ds-nav-item:hover { background: oklch(0.28 0.08 264); color: oklch(0.92 0.015 250); } .ds-nav-active { background: oklch(0.28 0.08 264); color: oklch(0.99 0 0); } .ds-nav-item svg { flex-shrink: 0; }"
+    },
+    {
+      "name": "Table Row",
+      "kind": "custom",
+      "refersTo": "table",
+      "description": "Data table row with horizontal divider and hover highlight.",
+      "html": "<table class=\"ds-table\"><thead><tr><th class=\"ds-th\">Имя</th><th class=\"ds-th\">Группа</th><th class=\"ds-th\">Статус</th></tr></thead><tbody><tr class=\"ds-tr\"><td class=\"ds-td\">Иван Петров</td><td class=\"ds-td\">Каратэ U12</td><td><span class=\"ds-badge ds-badge-success\">Активен</span></td></tr><tr class=\"ds-tr\"><td class=\"ds-td\">Анна Смирнова</td><td class=\"ds-td\">Дзюдо U14</td><td><span class=\"ds-badge ds-badge-outline\">Неактивен</span></td></tr></tbody></table>",
+      "css": ".ds-table { width: 100%; border-collapse: collapse; font-family: Inter, system-ui, sans-serif; font-size: 0.875rem; } .ds-th { padding: 8px 16px; background: oklch(0.96 0.008 250); color: oklch(0.5 0.03 256); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; text-align: left; white-space: nowrap; } .ds-th:first-child { border-radius: 8px 0 0 8px; } .ds-th:last-child { border-radius: 0 8px 8px 0; } .ds-tr { border-bottom: 1px solid oklch(0.92 0.012 250); transition: background 150ms; } .ds-tr:hover { background: oklch(0.96 0.008 250); } .ds-td { padding: 12px 16px; color: oklch(0.215 0.085 264); } .ds-td:first-child { font-weight: 500; }"
+    },
+    {
+      "name": "Dialog/Modal",
+      "kind": "custom",
+      "refersTo": "dialog",
+      "description": "Modal dialog with overlay, title, description, and action buttons.",
+      "html": "<div class=\"ds-dialog-overlay\"><div class=\"ds-dialog\"><h2 class=\"ds-dialog-title\">Подтвердите действие</h2><p class=\"ds-dialog-desc\">Вы уверены, что хотите удалить спортсмена? Это действие нельзя отменить.</p><div class=\"ds-dialog-actions\"><button class=\"ds-btn-outline\">Отмена</button><button class=\"ds-btn-primary\">Удалить</button></div></div></div>",
+      "css": ".ds-dialog-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: oklch(0 0 0 / 0.4); } .ds-dialog { background: oklch(1 0 0); border-radius: 0.75rem; padding: 24px; width: 100%; max-width: 440px; box-shadow: 0 1px 2px oklch(0.2 0.05 260 / 0.04), 0 8px 24px -12px oklch(0.2 0.05 260 / 0.08); } .ds-dialog-title { font-family: Manrope, Inter, system-ui, sans-serif; font-weight: 600; font-size: 1rem; line-height: 1.4; letter-spacing: -0.02em; color: oklch(0.215 0.085 264); margin: 0 0 8px 0; } .ds-dialog-desc { font-family: Inter, system-ui, sans-serif; font-weight: 400; font-size: 0.875rem; line-height: 1.5; color: oklch(0.5 0.03 256); margin: 0 0 24px 0; } .ds-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Штурманская рубка",
+    "overview": "Чистота линий, полный контроль, спокойная уверенность. Как капитанский мостик: каждый прибор на своём месте, данные читаются мгновенно, ничего лишнего. СОКОЛ — функциональный минимализм с сильной спортивной идентичностью. Интерфейс не привлекает внимания к себе — он направляет внимание тренера или руководителя на данные, сроки, статусы. Прозрачная иерархия, предсказуемые паттерны, никаких декоративных элементов, не несущих информации. Система явно отвергает эстетику старых гос. сайтов — серых, перегруженных таблицами и бюрократических.",
+    "keyCharacteristics": [
+      "Функциональный минимализм. Каждый пиксель работает на задачу. Никаких украшательств.",
+      "Спортивная строгость. Контрастные акценты (сигнальный оранжевый), чёткая типографика, ясная иерархия.",
+      "Плоские поверхности. Без лишних теней. Глубина достигается контрастом и цветом.",
+      "Предсказуемость. Однотипные действия выглядят одинаково во всех модулях.",
+      "Мобильная готовность. Спроектировано для работы в зале, с телефона."
+    ],
+    "rules": [
+      { "name": "The Decisive Accent Rule", "body": "Signal Orange занимает ≤5% любого экрана. Его редкость — в этом его сила.", "section": "colors" },
+      { "name": "The Sole Authority Rule", "body": "Никаких второстепенных цветов. Sport Blue, Deep Navy и Signal Orange — полная палитра.", "section": "colors" },
+      { "name": "The Single Voice Rule", "body": "Для body-текста разрешён только Inter. Manrope запрещён в абзацах и таблицах.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Поверхности плоские в покое. Тень — только как реакция на взаимодействие.", "section": "elevation" }
+    ],
+    "dos": [
+      "Использовать Sport Blue для всех интерактивных элементов (кнопки, ссылки, переключатели).",
+      "Оставлять достаточно воздуха между карточками и секциями (gap-6 / p-6 как минимум).",
+      "Использовать таблицы с горизонтальными линиями и подсветкой строки при hover — это стандартный паттерн для всех списков.",
+      "Давать обратную связь на каждое действие: hover на кликабельных элементах, focus ring на полях, тосты через Sonner.",
+      "Помечать недоступные пункты меню текстом «скоро» (оранжевый бейдж) — это честнее, чем скрывать их.",
+      "Использовать инициалы пользователя (градиент sport-blue → deep-navy) как аватар — это персонально, без лишних затрат на фото."
+    ],
+    "donts": [
+      "Использовать Signal Orange для интерактивных элементов — он только для статусов и бейджей «скоро».",
+      "Добавлять декоративные тени к карточкам. Единственная тень — card-shadow, едва заметная.",
+      "Использовать вертикальные линии в таблицах — только горизонтальные разделители.",
+      "Использовать яркие фоны, градиенты, glassmorphism или неоновые акценты — это противоречит философии «рабочего инструмента».",
+      "Смешивать шрифтовые гарнитуры внутри одной секции. Manrope — только заголовки, Inter — всё остальное.",
+      "Создавать СОКОЛ в тёмной теме с пурпурными градиентами или глянцевыми поверхностями.",
+      "Перегружать интерфейс текстом мелкого кегля. Минимальный размер для данных — 0.75rem (label), для основного текста — 0.875rem.",
+      "Проектировать интерфейс только для десктопа. Карточки, таблицы и навигация обязаны работать на экране 360px ширины."
+    ]
+  }
+}

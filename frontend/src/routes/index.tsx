@@ -44,6 +44,7 @@ import {
   centers,
   getCenterIdByCity,
   getPeriodStatus,
+  getGroupName,
 } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/")({
@@ -360,7 +361,7 @@ function Dashboard() {
                   {mySchedulesToday.map((s) => (
                     <li key={s.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-secondary">{s.group}</div>
+                        <div className="truncate text-sm font-semibold text-secondary">{getGroupName(s.groupId)}</div>
                         <div className="text-xs text-muted-foreground">{s.timeStart}–{s.timeEnd} · {s.room}</div>
                       </div>
                       <div className="shrink-0 text-xs text-muted-foreground">{s.discipline}</div>

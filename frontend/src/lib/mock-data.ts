@@ -342,7 +342,7 @@ export interface SchedulePeriod {
   id: string;
   coachId: string;
   coachName: string;
-  group: string;
+  groupId: string;
   discipline: Discipline;
   periodStart: string;
   periodEnd: string;
@@ -370,8 +370,8 @@ export function getPeriodStatus(p: SchedulePeriod): SchedulePeriod["status"] {
 }
 
 export const schedulePeriods: SchedulePeriod[] = [
-  { id: "SP-001", coachId: "2", coachName: "Петров А.В.", group: "Начальная подготовка", discipline: "Дзюдо", periodStart: "2026-01-01", periodEnd: "2026-08-31", status: "active", createdAt: "2025-12-20" },
-  { id: "SP-002", coachId: "2", coachName: "Петров А.В.", group: "УТГ-1", discipline: "Дзюдо", periodStart: "2026-01-01", periodEnd: "2026-08-31", status: "active", createdAt: "2025-12-20" },
+  { id: "SP-001", coachId: "2", coachName: "Петров А.В.", groupId: "GRP-001", discipline: "Дзюдо", periodStart: "2026-01-01", periodEnd: "2026-08-31", status: "active", createdAt: "2025-12-20" },
+  { id: "SP-002", coachId: "2", coachName: "Петров А.В.", groupId: "GRP-002", discipline: "Дзюдо", periodStart: "2026-01-01", periodEnd: "2026-08-31", status: "active", createdAt: "2025-12-20" },
 ];
 
 let schedulePeriodIdCounter = 2;
@@ -384,7 +384,7 @@ export interface Schedule {
   periodId: string;
   coachId: string;
   coachName: string;
-  group: string;
+  groupId: string;
   discipline: Discipline;
   dayOfWeek: number;
   timeStart: string;
@@ -398,12 +398,12 @@ export function freshScheduleId() {
 }
 
 export const schedules: Schedule[] = [
-  { id: "SCH-001", periodId: "SP-001", coachId: "2", coachName: "Петров А.В.", group: "Начальная подготовка", discipline: "Дзюдо", dayOfWeek: 1, timeStart: "09:00", timeEnd: "10:30", room: "Зал А" },
-  { id: "SCH-002", periodId: "SP-001", coachId: "2", coachName: "Петров А.В.", group: "Начальная подготовка", discipline: "Дзюдо", dayOfWeek: 3, timeStart: "09:00", timeEnd: "10:30", room: "Зал А" },
-  { id: "SCH-003", periodId: "SP-001", coachId: "2", coachName: "Петров А.В.", group: "Начальная подготовка", discipline: "Дзюдо", dayOfWeek: 5, timeStart: "10:00", timeEnd: "11:30", room: "Зал А" },
-  { id: "SCH-004", periodId: "SP-002", coachId: "2", coachName: "Петров А.В.", group: "УТГ-1", discipline: "Дзюдо", dayOfWeek: 1, timeStart: "15:00", timeEnd: "17:00", room: "Зал Б" },
-  { id: "SCH-005", periodId: "SP-002", coachId: "2", coachName: "Петров А.В.", group: "УТГ-1", discipline: "Дзюдо", dayOfWeek: 3, timeStart: "15:00", timeEnd: "17:00", room: "Зал Б" },
-  { id: "SCH-006", periodId: "SP-002", coachId: "2", coachName: "Петров А.В.", group: "УТГ-1", discipline: "Дзюдо", dayOfWeek: 5, timeStart: "15:00", timeEnd: "17:00", room: "Зал Б" },
+  { id: "SCH-001", periodId: "SP-001", coachId: "2", coachName: "Петров А.В.", groupId: "GRP-001", discipline: "Дзюдо", dayOfWeek: 1, timeStart: "09:00", timeEnd: "10:30", room: "Зал А" },
+  { id: "SCH-002", periodId: "SP-001", coachId: "2", coachName: "Петров А.В.", groupId: "GRP-001", discipline: "Дзюдо", dayOfWeek: 3, timeStart: "09:00", timeEnd: "10:30", room: "Зал А" },
+  { id: "SCH-003", periodId: "SP-001", coachId: "2", coachName: "Петров А.В.", groupId: "GRP-001", discipline: "Дзюдо", dayOfWeek: 5, timeStart: "10:00", timeEnd: "11:30", room: "Зал А" },
+  { id: "SCH-004", periodId: "SP-002", coachId: "2", coachName: "Петров А.В.", groupId: "GRP-002", discipline: "Дзюдо", dayOfWeek: 1, timeStart: "15:00", timeEnd: "17:00", room: "Зал Б" },
+  { id: "SCH-005", periodId: "SP-002", coachId: "2", coachName: "Петров А.В.", groupId: "GRP-002", discipline: "Дзюдо", dayOfWeek: 3, timeStart: "15:00", timeEnd: "17:00", room: "Зал Б" },
+  { id: "SCH-006", periodId: "SP-002", coachId: "2", coachName: "Петров А.В.", groupId: "GRP-002", discipline: "Дзюдо", dayOfWeek: 5, timeStart: "15:00", timeEnd: "17:00", room: "Зал Б" },
 ];
 
 export type AttendanceStatus = "present" | "absent" | "excused";
@@ -588,10 +588,18 @@ export function getCenterIdByCoachName(coachName: string): string {
 
 export function archiveOtherActivePeriods(period: SchedulePeriod) {
   for (const p of schedulePeriods) {
-    if (p.id !== period.id && p.group === period.group && getPeriodStatus(p) === "active") {
+    if (p.id !== period.id && p.groupId === period.groupId && getPeriodStatus(p) === "active") {
       p.status = "archived";
     }
   }
+}
+
+export function getGroupById(groupId: string): Group | undefined {
+  return groups.find((g) => g.id === groupId);
+}
+
+export function getGroupName(groupId: string): string {
+  return getGroupById(groupId)?.name ?? groupId;
 }
 
 export function persistSchedulePeriods() {

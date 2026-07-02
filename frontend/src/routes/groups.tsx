@@ -17,6 +17,7 @@ import {
   groups as allGroups,
   getCenterIdByCoachName,
   getPeriodStatus,
+  getGroupName,
   archiveOtherActivePeriods,
   freshSchedulePeriodId,
   freshScheduleId,
@@ -81,12 +82,12 @@ function GroupsPage() {
   );
 
   const groupPeriods = useMemo(
-    () => (selected ? schedulePeriods.filter((p) => p.group === selected.name) : []),
+    () => (selected ? schedulePeriods.filter((p) => p.groupId === selected.id) : []),
     [selected],
   );
 
   const groupSchedules = useMemo(
-    () => (selected ? schedules.filter((s) => s.group === selected.name) : []),
+    () => (selected ? schedules.filter((s) => s.groupId === selected.id) : []),
     [selected],
   );
 
@@ -206,7 +207,7 @@ function GroupsPage() {
         {/* List */}
         <div className="space-y-3">
           {myGroups.map((g) => {
-            const scheds = schedules.filter((s) => s.group === g.name);
+            const scheds = schedules.filter((s) => s.groupId === g.id);
             return (
               <Card
                 key={g.id}
@@ -514,6 +515,7 @@ function GroupsPage() {
 
       {showPeriodModal && selected && (
         <CreatePeriodForGroupModal
+          groupId={selected.id}
           groupName={selected.name}
           discipline={selected.discipline}
           coachId={user?.id ?? ""}
@@ -733,6 +735,7 @@ function EditPeriodForm({
 }
 
 function CreatePeriodForGroupModal({
+  groupId,
   groupName,
   discipline,
   coachId,
@@ -740,6 +743,7 @@ function CreatePeriodForGroupModal({
   onClose,
   onSaved,
 }: {
+  groupId: string;
   groupName: string;
   discipline: Discipline;
   coachId: string;
@@ -772,7 +776,7 @@ function CreatePeriodForGroupModal({
       id: periodId,
       coachId,
       coachName,
-      group: groupName,
+      groupId,
       discipline,
       periodStart,
       periodEnd,
@@ -786,7 +790,7 @@ function CreatePeriodForGroupModal({
         periodId,
         coachId,
         coachName,
-        group: groupName,
+        groupId,
         discipline,
         dayOfWeek: day,
         timeStart: t.start,
@@ -818,7 +822,7 @@ function CreatePeriodForGroupModal({
           </div>
           {(() => {
             const hasActive = schedulePeriods.some(
-              (p) => p.group === groupName && getPeriodStatus(p) === "active",
+              (p) => p.groupId === groupId && getPeriodStatus(p) === "active",
             );
             return hasActive ? (
               <div className="flex items-start gap-2 rounded-lg border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/10 p-2.5 text-xs text-muted-foreground">
