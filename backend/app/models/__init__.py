@@ -8,10 +8,13 @@ from app.models.athlete import (
 )
 from app.models.attendance import Attendance, AttendanceQRCode
 from app.models.audit import AuditLog
-from app.models.coach import Coach, CoachCategory, CoachVacation
+from app.models.coach import Coach, CoachCategory, CoachSickLeave, CoachVacation
+from app.models.commission import CommissionProtocol, PayoutRow
 from app.models.document import Document, DocumentApproval, DocumentTemplate
 from app.models.event import Competition, Event, Participant, Result
+from app.models.event_plan import EventPlan, PlanItem
 from app.models.group import Group, GroupMember
+from app.models.incentive_program import IncentiveProgram
 from app.models.organization import Center, Region
 from app.models.report import Report, ReportSubmission, ReportTemplate
 from app.models.schedule import Schedule
@@ -34,6 +37,8 @@ __all__ = [
     "AthleteAchievement",
     "Coach",
     "CoachCategory",
+    "CoachVacation",
+    "CoachSickLeave",
     "Group",
     "GroupMember",
     "Schedule",
@@ -49,4 +54,9 @@ __all__ = [
     "DocumentTemplate",
     "Document",
     "DocumentApproval",
+    "IncentiveProgram",
+    "CommissionProtocol",
+    "PayoutRow",
+    "EventPlan",
+    "PlanItem",
 ]

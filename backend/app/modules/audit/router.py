@@ -2,11 +2,15 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user_id
+from app.core.dependencies import require_roles
 from app.database import get_db
 from app.models.audit import AuditLog
 
-router = APIRouter(prefix="/audit-logs", tags=["audit"])
+router = APIRouter(
+    prefix="/audit-logs",
+    tags=["audit"],
+    dependencies=[Depends(require_roles("admin", "director"))],
+)
 
 
 @router.get("")
@@ -15,7 +19,6 @@ async def list_audit_logs(
     action: str | None = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
-    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(AuditLog).order_by(AuditLog.created_at.desc())

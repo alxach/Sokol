@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 
+from app.core.dependencies import require_roles
 from app.dependencies import get_event_service
 from app.schemas.event import (
     CompetitionCreate,
@@ -10,7 +11,11 @@ from app.schemas.event import (
 )
 from app.services.event_service import EventService
 
-router = APIRouter(prefix="/events", tags=["events"])
+router = APIRouter(
+    prefix="/events",
+    tags=["events"],
+    dependencies=[Depends(require_roles("coach", "admin", "director"))],
+)
 
 
 @router.post("")

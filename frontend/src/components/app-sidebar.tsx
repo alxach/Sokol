@@ -44,6 +44,7 @@ export function AppSidebar() {
     { title: "План мероприятий", url: "/plans", icon: CalendarCheck },
     { title: "Отчёты", url: "/reports", icon: FileText },
     { title: "Посещаемость", url: "/attendance", icon: ClipboardList },
+    { title: "Комиссия", url: "/commission", icon: FileText },
     { title: "Документы", url: "/documents", icon: FileText, disabled: true },
     { title: "Аналитика", url: "/analytics", icon: BarChart3 },
   ];
@@ -55,6 +56,7 @@ export function AppSidebar() {
     { title: "План мероприятий", url: "/plans", icon: CalendarCheck },
     { title: "Отчёты", url: "/reports", icon: FileText },
     { title: "Посещаемость", url: "/attendance", icon: ClipboardList },
+    { title: "Комиссия", url: "/commission", icon: FileText },
     { title: "Профиль", url: "/profile", icon: UserCog },
   ];
 

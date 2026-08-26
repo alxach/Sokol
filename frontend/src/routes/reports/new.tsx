@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { ArrowLeft, Send, Save } from "lucide-react";
+import { ArrowLeft, Send, Save, Lightbulb, ClipboardList } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,8 @@ import { useAuth, useAuthGuard } from "@/lib/auth";
 import {
   monthlyReportTemplate, reports, groups,
   freshReportId, persistReports,
+  countAthletesUnder21, calculateWeeklyHours, getPlanItemsForMonth,
+  getMonthNameFromDate, type PlanItem,
 } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/reports/new")({
@@ -27,6 +29,15 @@ export const Route = createFileRoute("/reports/new")({
 const now = new Date();
 const defaultStart = format(new Date(now.getFullYear(), now.getMonth(), 1), "dd.MM.yyyy");
 const defaultEnd = format(new Date(now.getFullYear(), now.getMonth() + 1, 0), "dd.MM.yyyy");
+
+function formatPlanItemShort(item: PlanItem): string {
+  const parts: string[] = [];
+  if (item.date) parts.push(item.date);
+  parts.push(item.name);
+  if (item.location) parts.push(`(${item.location})`);
+  if (item.participantsCount) parts.push(`— ${item.participantsCount} уч.`);
+  return parts.join(" ");
+}
 
 function NewReportPage() {
   const { loading } = useAuthGuard();
@@ -49,8 +60,49 @@ function NewReportPage() {
     development_events: "",
   });
 
+  const [autoFilled, setAutoFilled] = useState<Record<string, boolean>>({});
+
+  // ── Plan hints ──────────────────────────────────────────────────────────
+  const monthName = useMemo(() => getMonthNameFromDate(periodStart), [periodStart]);
+
+  const planItems = useMemo(() => {
+    if (!user?.id || !monthName) return null;
+    return getPlanItemsForMonth(user.id, monthName);
+  }, [user, monthName]);
+
+  // ── Auto-fill #1: athletes count (≤21) ─────────────────────────────────
+  useEffect(() => {
+    if (!user?.id) return;
+    const count = countAthletesUnder21(user.id);
+    setForm((prev) => ({ ...prev, athletes_count: String(count) }));
+    setAutoFilled((prev) => ({ ...prev, athletes_count: true }));
+  }, [user]);
+
+  // ── Auto-fill #2: weekly hours from schedule ────────────────────────────
+  const recalcHours = useCallback(() => {
+    if (!user?.id) return;
+    const hrs = calculateWeeklyHours(user.id, periodStart, periodEnd);
+    setForm((prev) => ({ ...prev, hours_per_week: String(hrs) }));
+    setAutoFilled((prev) => ({ ...prev, hours_per_week: true }));
+  }, [user, periodStart, periodEnd]);
+
+  useEffect(() => {
+    recalcHours();
+  }, [recalcHours]);
+
+  // ── Handlers ────────────────────────────────────────────────────────────
   const handleChange = (key: string, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    setAutoFilled((prev) => ({ ...prev, [key]: false }));
+  };
+
+  const fillFromPlan = (fieldKey: string, items: PlanItem[]) => {
+    if (items.length === 0) return;
+    const text = items
+      .map((item, i) => `${i + 1}. ${formatPlanItemShort(item)}`)
+      .join("\n");
+    setForm((prev) => ({ ...prev, [fieldKey]: text }));
+    setAutoFilled((prev) => ({ ...prev, [fieldKey]: false }));
   };
 
   const save = (status: "draft" | "submitted") => {
@@ -85,6 +137,12 @@ function NewReportPage() {
       </div>
     );
   }
+
+  const planHintMap: Record<string, PlanItem[] | undefined> = {
+    special_events: planItems?.category3,
+    sport_events: planItems?.category4,
+    development_events: planItems?.category5,
+  };
 
   return (
     <AppShell
@@ -166,38 +224,79 @@ function NewReportPage() {
         </div>
 
         <div className="space-y-6 p-6">
-          {template.fields.map((field) => (
-            <div key={field.key}>
-              <label className="mb-1.5 flex items-baseline gap-2 text-sm font-medium text-secondary">
-                <span className="h-5 w-5 flex-shrink-0 rounded-full bg-primary/10 text-center text-[10px] leading-5 text-primary">
-                  {template.fields.indexOf(field) + 1}
-                </span>
-                {field.label}
-              </label>
-              <p className="mb-2 text-xs text-muted-foreground">
-                Норма: <span className="font-medium text-foreground">{field.norm}</span>
-              </p>
+          {template.fields.map((field) => {
+            const planItemsForField = planHintMap[field.key];
+            const hasPlanItems = planItemsForField && planItemsForField.length > 0;
 
-              {field.type === "number" ? (
-                <Input
-                  type="number"
-                  min={0}
-                  placeholder="0"
-                  value={form[field.key]}
-                  onChange={(e) => handleChange(field.key, e.target.value)}
-                  className="h-10 w-32"
-                />
-              ) : (
-                <textarea
-                  value={form[field.key]}
-                  onChange={(e) => handleChange(field.key, e.target.value)}
-                  placeholder="Опишите проведённые мероприятия (с указанием дат, места, количества участников)..."
-                  className="w-full rounded-lg border border-border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  rows={5}
-                />
-              )}
-            </div>
-          ))}
+            return (
+              <div key={field.key}>
+                <label className="mb-1.5 flex items-baseline gap-2 text-sm font-medium text-secondary">
+                  <span className="h-5 w-5 flex-shrink-0 rounded-full bg-primary/10 text-center text-[10px] leading-5 text-primary">
+                    {template.fields.indexOf(field) + 1}
+                  </span>
+                  {field.label}
+                  {autoFilled[field.key] && (
+                    <span className="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      авто
+                    </span>
+                  )}
+                </label>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Норма: <span className="font-medium text-foreground">{field.norm}</span>
+                </p>
+
+                {field.type === "number" ? (
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="0"
+                    value={form[field.key]}
+                    onChange={(e) => handleChange(field.key, e.target.value)}
+                    className="h-10 w-32"
+                  />
+                ) : (
+                  <>
+                    {hasPlanItems && (
+                      <div className="mb-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                        <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-primary">
+                          <Lightbulb className="h-3.5 w-3.5" />
+                          Запланировано на {monthName}:
+                        </div>
+                        <ul className="mb-2 space-y-1 text-xs text-muted-foreground">
+                          {planItemsForField!.map((item) => (
+                            <li key={item.id} className="flex items-start gap-1.5">
+                              <span className="mt-0.5 h-1 w-1 flex-shrink-0 rounded-full bg-primary/40" />
+                              {formatPlanItemShort(item)}
+                            </li>
+                          ))}
+                        </ul>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1 text-xs text-primary hover:text-primary/80"
+                          onClick={() => fillFromPlan(field.key, planItemsForField!)}
+                        >
+                          <ClipboardList className="h-3 w-3" />
+                          Заполнить из плана
+                        </Button>
+                      </div>
+                    )}
+                    <textarea
+                      value={form[field.key]}
+                      onChange={(e) => handleChange(field.key, e.target.value)}
+                      placeholder={
+                        hasPlanItems
+                          ? "Нажмите «Заполнить из плана» или введите вручную..."
+                          : "Опишите проведённые мероприятия (с указанием дат, места, количества участников)..."
+                      }
+                      className="w-full rounded-lg border border-border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      rows={5}
+                    />
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         <div className="border-t border-border p-6">

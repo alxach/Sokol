@@ -11,16 +11,22 @@ from app.repositories import (
     AttendanceRepository,
     CenterRepository,
     CoachRepository,
+    CommissionProtocolRepository,
     CompetitionRepository,
     DocumentApprovalRepository,
     DocumentRepository,
     DocumentTemplateRepository,
+    EventPlanRepository,
     EventRepository,
     GroupMemberRepository,
     GroupRepository,
+    IncentiveProgramRepository,
     ParticipantRepository,
+    PayoutRowRepository,
+    PlanItemRepository,
     RegionRepository,
     ReportRepository,
+    ReportSubmissionRepository,
     ReportTemplateRepository,
     ResultRepository,
     ScheduleRepository,
@@ -31,6 +37,7 @@ from app.services.coach_service import CoachService
 from app.services.document_service import DocumentService
 from app.services.event_service import EventService
 from app.services.group_service import GroupService
+from app.services.incentive_service import IncentiveService
 from app.services.organization_service import OrganizationService
 from app.services.report_service import ReportService
 from app.services.schedule_service import ScheduleService
@@ -78,7 +85,11 @@ async def get_event_service(session: AsyncSession = Depends(get_session)) -> Eve
 
 
 async def get_report_service(session: AsyncSession = Depends(get_session)) -> ReportService:
-    return ReportService(ReportTemplateRepository(session), ReportRepository(session))
+    return ReportService(
+        ReportTemplateRepository(session),
+        ReportRepository(session),
+        ReportSubmissionRepository(session),
+    )
 
 
 async def get_document_service(
@@ -88,4 +99,14 @@ async def get_document_service(
         DocumentTemplateRepository(session),
         DocumentRepository(session),
         DocumentApprovalRepository(session),
+    )
+
+
+async def get_incentive_service(session: AsyncSession = Depends(get_session)) -> IncentiveService:
+    return IncentiveService(
+        IncentiveProgramRepository(session),
+        EventPlanRepository(session),
+        PlanItemRepository(session),
+        CommissionProtocolRepository(session),
+        PayoutRowRepository(session),
     )

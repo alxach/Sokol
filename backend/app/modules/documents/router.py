@@ -1,10 +1,15 @@
 from fastapi import APIRouter, Depends
 
+from app.core.dependencies import require_roles
 from app.dependencies import get_document_service
 from app.schemas.document import DocumentCreate
 from app.services.document_service import DocumentService
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(
+    prefix="/documents",
+    tags=["documents"],
+    dependencies=[Depends(require_roles("coach", "admin", "director"))],
+)
 
 
 @router.get("/templates")

@@ -2,6 +2,18 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import ExcelJS from "exceljs";
 
+const ruMonths = [
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+];
+
+const monthToQuarter: Record<string, number> = {
+  "Январь": 1, "Февраль": 1, "Март": 1,
+  "Апрель": 2, "Май": 2, "Июнь": 2,
+  "Июль": 3, "Август": 3, "Сентябрь": 3,
+  "Октябрь": 4, "Ноябрь": 4, "Декабрь": 4,
+};
+
 const athleteSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -46,10 +58,29 @@ const competitionSchema = z.object({
   medals: z.object({ gold: z.number(), silver: z.number(), bronze: z.number() }).optional(),
 });
 
+const planItemSchema = z.object({
+  categoryId: z.string(),
+  date: z.string(),
+  name: z.string(),
+  description: z.string(),
+  location: z.string(),
+  participantsCategory: z.string(),
+  participantsCount: z.string(),
+  month: z.string(),
+});
+
+const planSchema = z.object({
+  coachName: z.string(),
+  discipline: z.string(),
+  periodLabel: z.string(),
+  items: z.array(planItemSchema),
+});
+
 const exportSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("athletes"), data: z.array(athleteSchema) }),
   z.object({ type: z.literal("coaches"), data: z.array(coachSchema) }),
   z.object({ type: z.literal("competitions"), data: z.array(competitionSchema) }),
+  z.object({ type: z.literal("plans"), data: z.array(planSchema) }),
 ]);
 
 type ExportPayload = z.infer<typeof exportSchema>;
@@ -190,9 +221,12 @@ export const exportToExcel = createServerFn({ method: "POST" })
     } else if (data.type === "coaches") {
       buf = await buildCoachesExcel(data);
       filename = "coaches.xlsx";
-    } else {
+    } else if (data.type === "competitions") {
       buf = await buildCompetitionsExcel(data);
       filename = "competitions.xlsx";
+    } else {
+      buf = await buildPlansExcel(data);
+      filename = "plans-export.xlsx";
     }
 
     return { base64: buf.toString("base64"), filename };
@@ -280,4 +314,206 @@ export const importAthletesFromExcel = createServerFn({ method: "POST" })
     }));
 
     return { athletes: parsed };
+  });
+
+function monthEvents(items: Array<{ month: string }>): Map<string, typeof items> {
+  const map = new Map<string, typeof items>();
+  for (const item of items) {
+    const existing = map.get(item.month) ?? [];
+    existing.push(item);
+    map.set(item.month, existing);
+  }
+  return map;
+}
+
+async function buildPlansExcel(data: { type: "plans"; data: Array<z.infer<typeof planSchema>> }) {
+  const wb = new ExcelJS.Workbook();
+
+  const headers = [
+    { header: "Раздел отчета (категория мероприятия)", key: "category", width: 48 },
+    { header: "Дата", key: "date", width: 22 },
+    { header: "Наименование мероприятия", key: "name", width: 42 },
+    { header: "Формат/содержание/цель", key: "description", width: 56 },
+    { header: "Место проведения", key: "location", width: 28 },
+    { header: "Категория участников", key: "participants", width: 36 },
+    { header: "Количество участников", key: "count", width: 18 },
+  ];
+
+  const categoryLabel: Record<string, string> = {
+    "3": "3. Проведение мероприятий с определенными категориями населения",
+    "4": "4. Проведение соревнований на территории ЦСЕ; учебно-тренировочных сборов; мастер-классов от чемпионов на территории ЦСЕ для спортсменов ЦСЕ",
+    "5": "5. Проведение мероприятий, направленных на развитие спортсменов ЦСЕ",
+  };
+
+  for (const plan of data.data) {
+    const sheetName = plan.coachName.length > 28 ? plan.coachName.slice(0, 28) : plan.coachName;
+    const ws = wb.addWorksheet(sheetName);
+
+    ws.columns = headers.map((h) => ({ header: h.header, key: h.key, width: h.width }));
+
+    // Row 1: Title
+    const titleRow = ws.addRow(["План мероприятий тренера"]);
+    titleRow.font = { bold: true, name: "Calibri", size: 14, color: { argb: "FF09234C" } };
+    titleRow.height = 28;
+    ws.mergeCells(`A${titleRow.number}:G${titleRow.number}`);
+
+    // Row 2: Headers
+    const headerRow = ws.addRow(headers.map((h) => h.header));
+    headerRow.font = { bold: true, name: "Calibri", size: 10, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF467FC0" } };
+    headerRow.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    headerRow.height = 32;
+
+    // Row 3: Coach info
+    const coachRow = ws.addRow([`${plan.coachName} , вид единоборств: ${plan.discipline}.`]);
+    coachRow.font = { bold: true, name: "Calibri", size: 10, color: { argb: "FF09234C" } };
+    coachRow.height = 20;
+    ws.mergeCells(`A${coachRow.number}:G${coachRow.number}`);
+
+    const monthGroups = monthEvents(plan.items as any);
+
+    for (const month of ruMonths) {
+      const events = monthGroups.get(month);
+      if (!events || events.length === 0) continue;
+
+      // Month header row
+      const mhRow = ws.addRow([month]);
+      mhRow.font = { bold: true, name: "Calibri", size: 10, color: { argb: "FF09234C" } };
+      mhRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF0F8" } };
+      ws.mergeCells(`A${mhRow.number}:G${mhRow.number}`);
+
+      for (const ev of events) {
+        ws.addRow([
+          categoryLabel[ev.categoryId] ?? ev.categoryId,
+          ev.date,
+          ev.name,
+          ev.description,
+          ev.location,
+          ev.participantsCategory,
+          ev.participantsCount,
+        ]);
+      }
+    }
+
+    // Signature row
+    const sigRow = ws.addRow([`Тренер-преподаватель: _______________ / ${plan.coachName}`]);
+    sigRow.font = { name: "Calibri", size: 10, color: { argb: "FF09234C" } };
+    sigRow.height = 22;
+    ws.mergeCells(`A${sigRow.number}:G${sigRow.number}`);
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  return Buffer.from(buf);
+}
+
+const importPlanSchema = z.object({
+  base64: z.string(),
+});
+
+function validatePlanDate(dateRaw: string, month: string): string[] {
+  const warnings: string[] = [];
+  if (!dateRaw) return warnings;
+
+  const monthRefs: number[] = [];
+
+  const monthMatches = dateRaw.matchAll(/(\d{1,2})\.(\d{1,2})\.(\d{4})/g);
+  for (const m of monthMatches) {
+    const day = parseInt(m[1]);
+    const monthNum = parseInt(m[2]);
+    const year = parseInt(m[3]);
+
+    const date = new Date(year, monthNum - 1, day);
+    if (date.getFullYear() !== year || date.getMonth() !== monthNum - 1 || date.getDate() !== day) {
+      warnings.push(`Невалидная дата "${m[0]}"`);
+    }
+
+    monthRefs.push(monthNum);
+  }
+
+  const rangeMonthMatches = dateRaw.matchAll(/\.(\d{1,2})\.(\d{4})/g);
+  for (const m of rangeMonthMatches) {
+    monthRefs.push(parseInt(m[1]));
+  }
+
+  if (month && monthRefs.length > 0) {
+    const monthNumFromMap = ruMonths.indexOf(month) + 1;
+    if (monthNumFromMap > 0 && !monthRefs.some((mr) => mr === monthNumFromMap)) {
+      warnings.push(`Даты "${dateRaw}" не соответствуют месяцу "${month}" (возможно, копипаста)`);
+    }
+  }
+
+  return warnings;
+}
+
+export const importPlanFromExcel = createServerFn({ method: "POST" })
+  .inputValidator(importPlanSchema)
+  .handler(async ({ data }) => {
+    const buf = Buffer.from(data.base64, "base64");
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.read(buf);
+    const ws = wb.worksheets[0];
+    if (!ws) throw new Error("Файл не содержит листов");
+
+    let coachName = "";
+    let discipline = "";
+    let currentMonth = "";
+    const items: Array<z.infer<typeof planItemSchema>> = [];
+    const warnings: string[] = [];
+    let coachFound = false;
+
+    ws.eachRow((row, rowNumber) => {
+      const cells: string[] = [];
+      row.eachCell((cell) => cells.push(cell.value != null ? String(cell.value).trim() : ""));
+      const nonEmpty = cells.filter((c) => c.length > 0);
+      if (nonEmpty.length === 0) return;
+
+      const firstCell = cells[0] || "";
+
+      if (!coachFound && firstCell.includes("вид")) {
+        const match = firstCell.match(/^([^,]+?)\s*,\s*вид\s+единоборств:\s*(.+?)\.?$/i);
+        if (match) {
+          coachName = match[1].trim();
+          discipline = match[2].trim();
+          coachFound = true;
+        }
+        return;
+      }
+
+      if (!coachFound && firstCell.includes("вид")) return;
+
+      if (ruMonths.includes(firstCell)) {
+        currentMonth = firstCell;
+        return;
+      }
+
+      const vacMatch = nonEmpty.length === 1 && (firstCell.toLowerCase() === "отпуск");
+      if (vacMatch) return;
+
+      if (firstCell.includes("Тренер-преподаватель")) return;
+      if (firstCell.includes("Раздел") || firstCell.includes("категория")) return;
+
+      const catMatch = firstCell.match(/^(\d+)\.?\s*(.*)/);
+      if (catMatch && ["3", "4", "5"].includes(catMatch[1])) {
+        const categoryId = catMatch[1];
+        const dateRaw = cells[1] || "";
+
+        const dateWarnings = validatePlanDate(dateRaw, currentMonth);
+        for (const w of dateWarnings) {
+          warnings.push(`Строка ${rowNumber}: ${w}`);
+        }
+
+        items.push({
+          categoryId,
+          date: dateRaw,
+          name: cells[2] || "",
+          description: cells[3] || "",
+          location: cells[4] || "",
+          participantsCategory: cells[5] || "",
+          participantsCount: cells[6] || "",
+          month: currentMonth,
+        });
+      }
+    });
+
+    return { coachName, discipline, items, warnings };
   });

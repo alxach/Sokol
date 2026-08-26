@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { MiniStat } from "@/components/mini-stat";
 import { useAuth, useAuthGuard } from "@/lib/auth";
 import {
   competitions, athletes, type Competition, type CompetitionAthlete, type CompetitionResult, type Discipline, type EventLevel, type EventStatus,
@@ -440,24 +441,6 @@ function ResultBadge({ label, count }: { label: string; count: number }) {
   );
 }
 
-function MiniStat({ label, value, accent, icon }: { label: string; value: string; accent: "primary" | "secondary" | "accent" | "success"; icon?: React.ReactNode }) {
-  const tone: Record<string, string> = {
-    primary: "border-l-primary",
-    secondary: "border-l-secondary",
-    accent: "border-l-accent",
-    success: "border-l-[color:var(--success)]",
-  };
-  return (
-    <Card className={`flex items-center justify-between border-l-4 p-5 shadow-[var(--shadow-card)] ${tone[accent]}`}>
-      <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
-        <div className="mt-1 font-display text-2xl font-bold text-secondary">{value}</div>
-      </div>
-      {icon && <div className="text-accent">{icon}</div>}
-    </Card>
-  );
-}
-
 /* ───── Create Competition Modal ───── */
 
 interface CreateCompetitionData {
@@ -517,7 +500,7 @@ function CompetitionFormModal({ defaultDiscipline, competition, onSave, onClose 
       <div className="w-full max-w-lg rounded-2xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <h3 className="font-display text-lg font-bold text-secondary">{isEdit ? "Редактировать соревнование" : "Новое соревнование"}</h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
         </div>
         <div className="space-y-4 px-6 py-4">
           <div>
@@ -623,7 +606,7 @@ function ManageAthletesModal({
             <h3 className="font-display text-lg font-bold text-secondary">{competition.title}</h3>
             <p className="text-sm text-muted-foreground">{competition.city} · {competition.date}</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
         </div>
 
         <div className="px-6 py-4">

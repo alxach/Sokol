@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { FileText, FileDown, Plus, Search, CheckCircle, XCircle, Send, Eye } from "lucide-react";
+import { FileText, FileDown, Plus, Search, CheckCircle, XCircle, Send, Eye, X } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { reports, monthlyReportTemplate, groups, type Report, type ReportStatus, persistReports } from "@/lib/mock-data";
 import { generateReportDocx } from "@/lib/api/reports.functions";
+import { calculateGross, calculateNdf, calculateInsurance } from "@/lib/mock-data";
 
 function downloadBase64(base64: string, filename: string) {
   const byteChars = atob(base64);
@@ -284,6 +285,21 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
   const handleSubmitDraft = () => {
     report.status = "submitted";
     report.submittedAt = format(new Date(), "dd.MM.yyyy");
+    report.programId = "prog-1";
+
+    // Auto-calculate payout tier based on norm validation
+    if (template?.fields) {
+      let allMeetFull = true;
+      let anyMeetBasic = false;
+      for (const field of template.fields) {
+        if (field.normFull == null) continue;
+        const val = Number(report.data[field.key]);
+        if (isNaN(val) || val < field.normFull) allMeetFull = false;
+        if (!isNaN(val) && val >= (field.normBasic ?? 0)) anyMeetBasic = true;
+      }
+      report.payoutTier = allMeetFull ? 50000 : anyMeetBasic ? 25000 : 0;
+    }
+
     persistReports();
     onClose();
   };
@@ -306,7 +322,7 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
             <Badge variant="outline" className={`font-normal ${statusConfig[report.status].style}`}>
               {statusConfig[report.status].label}
             </Badge>
-            <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+            <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
           </div>
         </div>
 
@@ -317,21 +333,69 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
           {report.reviewedAt && <> · Проверен: <span className="font-medium text-foreground">{report.reviewedAt}</span></>}
         </div>
 
+        {/* Protocol link */}
+        {report.commissionProtocolId && (
+          <div className="border-b border-border px-6 py-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <FileText className="h-3.5 w-3.5 text-primary/60" />
+            <span>Привязан к протоколу комиссии: <span className="font-medium text-foreground">{report.commissionProtocolId}</span></span>
+          </div>
+        )}
+
         {/* Fields */}
         <div className="space-y-4 px-6 py-4">
           {template?.fields.map((field) => {
             const value = report.data[field.key];
+            const numVal = typeof value === "number" ? value : Number(value);
+            const meetsNormFull = field.normFull != null && !isNaN(numVal) ? numVal >= field.normFull : null;
+            const meetsNormBasic = field.normBasic != null && !isNaN(numVal) ? numVal >= field.normBasic : null;
+            const confirmationLabel = field.confirmationForm === "mandatory_in_report"
+              ? "Подтверждается формой отчёта"
+              : field.confirmationForm === "on_request"
+                ? "По запросу Благополучателя"
+                : "";
+
             return (
               <div key={field.key}>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
                   {field.label}
-                  <span className="ml-2 italic text-muted-foreground/60">(норма: {field.norm})</span>
+                  {field.confirmationForm && (
+                    <span className={`ml-2 text-xs ${
+                      field.confirmationForm === "mandatory_in_report"
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-amber-600 dark:text-amber-400"
+                    }`}>
+                      ({confirmationLabel})
+                    </span>
+                  )}
                 </label>
                 {field.type === "number" ? (
-                  <div className="text-2xl font-display font-bold text-secondary">{String(value ?? "—")}</div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-2xl font-display font-bold text-secondary">{String(value ?? "—")}</div>
+                    {meetsNormFull !== null && (
+                      <div className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                        meetsNormFull
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                          : meetsNormBasic
+                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                            : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                      }`}>
+                        {meetsNormFull ? "≥50К" : meetsNormBasic ? "≥25К" : "ниже нормы"}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm text-foreground whitespace-pre-wrap">
                     {(value as string) || "—"}
+                  </div>
+                )}
+                {field.normFull != null && (
+                  <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+                    <span>
+                      Норма: <span className="font-medium text-foreground">≥{field.normFull}</span> (50К)
+                      {" / "}
+                      <span className="font-medium text-foreground">≥{field.normBasic}</span> (25К)
+                    </span>
+                    {field.unit && <span className="text-muted-foreground/60">({field.unit})</span>}
                   </div>
                 )}
                 <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
@@ -360,6 +424,46 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
         <div className="border-t border-border px-6 py-4 text-sm text-muted-foreground">
           <span className="font-medium text-foreground">Тренер-преподаватель:</span> _______________ / {report.coachName}
         </div>
+
+        {/* Payout calculation (v8, Приложение №6) */}
+        {report.payoutTier != null && report.payoutTier > 0 && (
+          <div className="border-t border-border px-6 py-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-semibold text-secondary">Расчёт выплаты (Приложение №6)</span>
+              <Badge variant="outline" className="text-xs font-normal">
+                {report.payoutTier === 50000 ? "50 000 ₽" : "25 000 ₽"}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-4 gap-4 rounded-lg border border-border bg-muted/20 p-3 text-sm">
+              {(() => {
+                const net = report.payoutTier;
+                const gross = calculateGross(net, 13, 30.2);
+                const ndfl = calculateNdf(gross, 13);
+                const insurance = calculateInsurance(gross, 30.2);
+                return (
+                  <>
+                    <div>
+                      <span className="text-xs text-muted-foreground">Выплата на карту (нетто)</span>
+                      <div className="font-display font-bold text-secondary">{net.toLocaleString("ru-RU")} ₽</div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground">НДФЛ (13%)</span>
+                      <div className="font-medium text-red-600 dark:text-red-400">−{ndfl.toLocaleString("ru-RU")} ₽</div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground">Страховые взносы (30,2%)</span>
+                      <div className="font-medium text-amber-600 dark:text-amber-400">{insurance.toLocaleString("ru-RU")} ₽</div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground">Итого брутто (затраты Организации)</span>
+                      <div className="font-display font-bold text-secondary">{gross.toLocaleString("ru-RU")} ₽</div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         {isAdmin && report.status === "submitted" && (

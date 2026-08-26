@@ -24,6 +24,8 @@ class Center(TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("regions.id"), nullable=True,
     )
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    center_type: Mapped[str] = mapped_column(String(50), default="cse", nullable=False)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

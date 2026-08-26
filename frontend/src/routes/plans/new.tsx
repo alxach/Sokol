@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { CategoryReference } from "@/components/category-reference";
 import { useAuthGuard, useAuth } from "@/lib/auth";
 import { planCategories, planCategoryKeys, type PlanCategoryId } from "@/lib/mock-data";
 
@@ -52,18 +53,23 @@ function freshItemKey() {
   return `item_${++itemKeyCounter}`;
 }
 
-const initialItem = (): PlanItemForm => ({
-  key: freshItemKey(),
-  categoryId: "3",
-  quarter: 1,
-  month: "Январь",
-  date: "",
-  name: "",
-  description: "",
-  location: "",
-  participantsCategory: "",
-  participantsCount: "",
-});
+const initialItem = (): PlanItemForm => {
+  const currentMonthIdx = new Date().getMonth();
+  const qtr = Math.floor(currentMonthIdx / 3) + 1;
+  const firstMonth = monthOptions[currentMonthIdx - (currentMonthIdx % 3)];
+  return {
+    key: freshItemKey(),
+    categoryId: "3",
+    quarter: qtr,
+    month: firstMonth,
+    date: "",
+    name: "",
+    description: "",
+    location: "",
+    participantsCategory: "",
+    participantsCount: "",
+  };
+};
 
 function NewPlanPage() {
   const { loading } = useAuthGuard();
@@ -166,6 +172,12 @@ function NewPlanPage() {
         </Badge>
       </div>
 
+      <div className="mb-4 flex items-center gap-3">
+        <Button variant="outline" onClick={addItem} className="border-dashed">
+          <Plus className="mr-1.5 h-4 w-4" /> Добавить мероприятие
+        </Button>
+      </div>
+
       <div className="space-y-4">
         {items.map((item, index) => (
           <Card key={item.key} className="border border-border p-5 shadow-[var(--shadow-card)]">
@@ -179,7 +191,7 @@ function NewPlanPage() {
             </div>
 
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
-              <div>
+              <div className="lg:col-span-2">
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Категория *</label>
                 <select
                   value={item.categoryId}
@@ -192,6 +204,9 @@ function NewPlanPage() {
                     </option>
                   ))}
                 </select>
+                <div className="mt-1.5">
+                  <CategoryReference categoryId={item.categoryId} />
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Квартал *</label>
@@ -288,12 +303,6 @@ function NewPlanPage() {
             </div>
           </Card>
         ))}
-      </div>
-
-      <div className="mt-4 flex items-center gap-3">
-        <Button variant="outline" onClick={addItem} className="border-dashed">
-          <Plus className="mr-1.5 h-4 w-4" /> Добавить мероприятие
-        </Button>
       </div>
 
       <div className="mt-6 border-t border-border pt-6">

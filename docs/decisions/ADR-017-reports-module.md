@@ -1,7 +1,7 @@
 # ADR-017: Модуль «Отчёты» (Reports)
 
 ## Status
-Updated (2026-06-29)
+Updated (2026-07-15)
 
 ## Date
 2026-06-28
@@ -186,6 +186,39 @@ try {
 
 Шрифт: Times New Roman для всего документа.
 
+### Автозаполнение полей отчёта
+
+**Источники данных для автозаполнения:**
+
+| Поле | Источник | Логика |
+|------|----------|--------|
+| `athletes_count` | `groups` → `athleteIds` → `athletes` | Подсчёт спортсменов ≤21 года в группах тренера (`countAthletesUnder21`) |
+| `hours_per_week` | `schedules` + `schedulePeriods` + `vacations/sickLeaves` | Суммарные часы по расписанию за вычетом дней отпуска/больничного (`calculateWeeklyHours`) |
+| `special_events` | `plans` (categoryId=3) | Подсказка из годового плана на текущий месяц |
+| `sport_events` | `plans` (categoryId=4) | Подсказка из годового плана на текущий месяц |
+| `development_events` | `plans` (categoryId=5) | Подсказка из годового плана на текущий месяц |
+
+**Хелперы в `mock-data.ts`:**
+
+```typescript
+countAthletesUnder21(coachId: string): number
+calculateWeeklyHours(coachId: string, periodStart: string, periodEnd: string): number
+getPlanItemsForMonth(coachId: string, monthName: string): { category3, category4, category5 }
+getMonthNameFromDate(dateStr: string): string | null
+parseDdMmYyyy(dateStr: string): Date | null
+```
+
+**UX автозаполнения:**
+
+1. **Числовые поля (1–2):** заполняются автоматически при монтировании + при изменении периода. Бейдж `авто` рядом с'label' указывает на автозаполнение. Тренер может редактировать — при изменении бейдж исчезает.
+2. **Текстовые поля (3–5):** если для текущего месяца есть плановые мероприятия — над textarea отображается информационный блок со списком запланированных мероприятий (дата, название, место, кол-во участников). Кнопка «Заполнить из плана» копирует список в textarea. Если планов нет — стандартный placeholder.
+
+**Расчёт `hours_per_week`:**
+1. Найти активные `schedulePeriods`, пересекающиеся с отчётным периодом
+2. Собрать `schedules` для этих периодов, рассчитать недельный паттерн (сумма длительностей по `dayOfWeek`)
+3. Перебрать каждый день отчётного периода: если день — тренировочный и попадает на отпуск/больничный → вычесть часы
+4. `effectiveHours = (totalScheduled - absenceHours) / totalWeeks`
+
 ### Доработки бэкенда
 
 - `POST /api/v1/reports` — создание отчёта
@@ -217,3 +250,4 @@ try {
 - ☐ `reports.functions.ts`: Word-документ переписан под точную структуру reference PDF — 4-колоночная таблица, «Оценка комиссии», подпись тренера, приложения (пункты №3-5) с page break
 - ☐ `reports.functions.ts`: `formatEventRow` упрощён — парсинг даты/места/участников удалён. Колонка 3 содержит сырой текст тренера из textarea (split по `\n`) + hint про фото/скрины/СМИ
 - ☐ **2026-06-29**: Исправлена навигация «Редактировать» → «К списку отчётов». Ранее `<Link to="/reports/new">` в `ReportDetailModal` не закрывал модалку (`selectedReport` оставался установлен), поэтому при возврате с `/reports/new` на `/reports` через кнопку «К списку отчётов» модалка снова открывалась. Исправлено: `<Link>` заменён на `Button` с вызовом `onClose()` перед `navigate({ to: "/reports/new" })`.
+- ☐ **2026-07-15**: Автозаполнение полей отчёта на `/reports/new` — хелперы `countAthletesUnder21`, `calculateWeeklyHours`, `getPlanItemsForMonth` в `mock-data.ts`; числовые поля заполняются автоматически (бейдж «auto»), текстовые — подсказки из годового плана с кнопкой «Заполнить из плана»

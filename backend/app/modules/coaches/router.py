@@ -1,13 +1,18 @@
 from fastapi import APIRouter, Depends
 
+from app.core.dependencies import require_roles
 from app.dependencies import get_coach_service
 from app.schemas.coach import CoachCreate, CoachUpdate
 from app.services.coach_service import CoachService
 
-router = APIRouter(prefix="/coaches", tags=["coaches"])
+router = APIRouter(
+    prefix="/coaches",
+    tags=["coaches"],
+    dependencies=[Depends(require_roles("coach", "admin", "director"))],
+)
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_roles("admin", "director"))])
 async def create_coach(
     data: CoachCreate,
     service: CoachService = Depends(get_coach_service),
@@ -33,7 +38,7 @@ async def get_coach(
     return await service.get(coach_id)
 
 
-@router.patch("/{coach_id}")
+@router.patch("/{coach_id}", dependencies=[Depends(require_roles("admin", "director"))])
 async def update_coach(
     coach_id: str,
     data: CoachUpdate,

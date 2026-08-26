@@ -21,6 +21,11 @@ __all__ = [
     "DocumentTemplateRepository",
     "DocumentRepository",
     "DocumentApprovalRepository",
+    "IncentiveProgramRepository",
+    "EventPlanRepository",
+    "PlanItemRepository",
+    "CommissionProtocolRepository",
+    "PayoutRowRepository",
 ]
 
 from app.repositories.athlete_repo import (
@@ -44,6 +49,13 @@ from app.repositories.event_repo import (
     ResultRepository,
 )
 from app.repositories.group_repo import GroupMemberRepository, GroupRepository
+from app.repositories.incentive_repo import (
+    CommissionProtocolRepository,
+    EventPlanRepository,
+    IncentiveProgramRepository,
+    PayoutRowRepository,
+    PlanItemRepository,
+)
 from app.repositories.organization_repo import CenterRepository, RegionRepository
 from app.repositories.report_repo import (
     ReportRepository,

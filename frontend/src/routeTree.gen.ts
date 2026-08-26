@@ -16,6 +16,7 @@ import { Route as PlansRouteImport } from './routes/plans'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as GroupsRouteImport } from './routes/groups'
 import { Route as CompetitionsRouteImport } from './routes/competitions'
+import { Route as CommissionRouteImport } from './routes/commission'
 import { Route as CoachesRouteImport } from './routes/coaches'
 import { Route as AttendanceRouteImport } from './routes/attendance'
 import { Route as AthletesRouteImport } from './routes/athletes'
@@ -57,6 +58,11 @@ const GroupsRoute = GroupsRouteImport.update({
 const CompetitionsRoute = CompetitionsRouteImport.update({
   id: '/competitions',
   path: '/competitions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CommissionRoute = CommissionRouteImport.update({
+  id: '/commission',
+  path: '/commission',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CoachesRoute = CoachesRouteImport.update({
@@ -101,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/athletes': typeof AthletesRoute
   '/attendance': typeof AttendanceRoute
   '/coaches': typeof CoachesRoute
+  '/commission': typeof CommissionRoute
   '/competitions': typeof CompetitionsRoute
   '/groups': typeof GroupsRoute
   '/login': typeof LoginRoute
@@ -117,6 +124,7 @@ export interface FileRoutesByTo {
   '/athletes': typeof AthletesRoute
   '/attendance': typeof AttendanceRoute
   '/coaches': typeof CoachesRoute
+  '/commission': typeof CommissionRoute
   '/competitions': typeof CompetitionsRoute
   '/groups': typeof GroupsRoute
   '/login': typeof LoginRoute
@@ -134,6 +142,7 @@ export interface FileRoutesById {
   '/athletes': typeof AthletesRoute
   '/attendance': typeof AttendanceRoute
   '/coaches': typeof CoachesRoute
+  '/commission': typeof CommissionRoute
   '/competitions': typeof CompetitionsRoute
   '/groups': typeof GroupsRoute
   '/login': typeof LoginRoute
@@ -152,6 +161,7 @@ export interface FileRouteTypes {
     | '/athletes'
     | '/attendance'
     | '/coaches'
+    | '/commission'
     | '/competitions'
     | '/groups'
     | '/login'
@@ -168,6 +178,7 @@ export interface FileRouteTypes {
     | '/athletes'
     | '/attendance'
     | '/coaches'
+    | '/commission'
     | '/competitions'
     | '/groups'
     | '/login'
@@ -184,6 +195,7 @@ export interface FileRouteTypes {
     | '/athletes'
     | '/attendance'
     | '/coaches'
+    | '/commission'
     | '/competitions'
     | '/groups'
     | '/login'
@@ -201,6 +213,7 @@ export interface RootRouteChildren {
   AthletesRoute: typeof AthletesRoute
   AttendanceRoute: typeof AttendanceRoute
   CoachesRoute: typeof CoachesRoute
+  CommissionRoute: typeof CommissionRoute
   CompetitionsRoute: typeof CompetitionsRoute
   GroupsRoute: typeof GroupsRoute
   LoginRoute: typeof LoginRoute
@@ -259,6 +272,13 @@ declare module '@tanstack/react-router' {
       path: '/competitions'
       fullPath: '/competitions'
       preLoaderRoute: typeof CompetitionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/commission': {
+      id: '/commission'
+      path: '/commission'
+      fullPath: '/commission'
+      preLoaderRoute: typeof CommissionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/coaches': {
@@ -340,6 +360,7 @@ const rootRouteChildren: RootRouteChildren = {
   AthletesRoute: AthletesRoute,
   AttendanceRoute: AttendanceRoute,
   CoachesRoute: CoachesRoute,
+  CommissionRoute: CommissionRoute,
   CompetitionsRoute: CompetitionsRoute,
   GroupsRoute: GroupsRoute,
   LoginRoute: LoginRoute,

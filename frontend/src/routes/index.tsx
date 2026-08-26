@@ -308,6 +308,49 @@ function Dashboard() {
       </section>
       )}
 
+      {/* Incentive Program Criteria Summary (v8) — Coach only */}
+      {isCoach && (
+        <section className="mb-6">
+          <h3 className="mb-3 font-display text-sm font-bold text-secondary">Критерии материального стимулирования</h3>
+          <Card className="border border-border p-4 shadow-none">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              {[
+                { label: "Спортсмены (до 21 года)", current: myAthletes.length, full: 30, basic: 15, unit: "чел." },
+                { label: "Часы тренировок", current: 8, full: 9, basic: 4.5, unit: "ч/нед" },
+                { label: "Мероприятия с особыми категориями", current: 1, full: 1, basic: 1, unit: "меропр./мес" },
+                { label: "Спортивные мероприятия", current: 1, full: 1, basic: 1, unit: "меропр./мес" },
+                { label: "Мероприятия развития спортсменов", current: 1, full: 1, basic: 1, unit: "меропр./мес" },
+              ].map((c) => {
+                const pct = Math.min((c.current / c.full) * 100, 100);
+                const meetsFull = c.current >= c.full;
+                const meetsBasic = c.current >= c.basic;
+                return (
+                  <div key={c.label} className="space-y-1.5">
+                    <div className="text-xs font-medium text-secondary">{c.label}</div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="font-display text-lg font-bold text-secondary">{c.current}</span>
+                      <span className="text-xs text-muted-foreground">/ {c.full} {c.unit}</span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-muted/40">
+                      <div
+                        className={`h-full rounded-full transition-all ${meetsFull ? "bg-emerald-500" : meetsBasic ? "bg-amber-500" : "bg-red-400"}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {meetsFull ? "≥50К ✓" : meetsBasic ? "≥25К" : "ниже нормы"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-3 border-t border-border pt-2 text-[10px] text-muted-foreground/60">
+              Данные за текущий месяц. Нормы: ≥50 000 ₽ (полная) / ≥25 000 ₽ (базовая). Выплаты на усмотрение Организации (п. 1.3).
+            </div>
+          </Card>
+        </section>
+      )}
+
       {/* Coach: My athletes + today's schedule + plans */}
       {isCoach ? (
         <>

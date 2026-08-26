@@ -1,6 +1,18 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Plus, Trash2, Clock, MapPin, Edit3, Check, ArrowLeft, X, CalendarDays, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Clock, Edit3, Check, ArrowLeft, X, CalendarDays, ChevronDown, Copy, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
@@ -17,13 +29,15 @@ import {
   getPeriodStatus,
   getGroupName,
   archiveOtherActivePeriods,
-  freshSchedulePeriodId,
+  duplicatePeriod,
+  dateOverlapsPeriods,
+  getCoachVacationPeriods,
   freshScheduleId,
   persistSchedulePeriods,
   persistSchedules,
   type SchedulePeriod,
   type Schedule,
-  type Discipline,
+  type VacationPeriod,
 } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/schedules")({
@@ -44,12 +58,12 @@ function SchedulesPage() {
   const { isAdmin, isCoach, isDirector } = useAuth();
   const { selectedCenterId } = useCenter();
   const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
-  const [showCreatePeriod, setShowCreatePeriod] = useState(false);
   const [showEditPeriod, setShowEditPeriod] = useState<string | null>(null);
-  const [showAddSchedule, setShowAddSchedule] = useState(false);
+  const [addScheduleDay, setAddScheduleDay] = useState<number | null>(null);
   const [showEditSchedule, setShowEditSchedule] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<string>("Все");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [showCrossSchedule, setShowCrossSchedule] = useState(false);
   const [, forceUpdate] = useState(0);
   const rerender = () => forceUpdate((n) => n + 1);
 
@@ -105,21 +119,18 @@ function SchedulesPage() {
   }, [crossSchedules]);
 
   const canEdit = (period: SchedulePeriod) => {
-    return isCoach && period.coachId === user?.id && getPeriodStatus(period) === "draft";
+    return isCoach && period.coachId === user?.id && getPeriodStatus(period) !== "archived";
   };
 
   const handleDeletePeriod = (periodId: string) => {
-    const idx = allPeriods.findIndex((p) => p.id === periodId);
-    if (idx !== -1) allPeriods.splice(idx, 1);
-    const toRemove = allSchedules.filter((s) => s.periodId === periodId);
-    for (const s of toRemove) {
-      const sidx = allSchedules.findIndex((x) => x.id === s.id);
-      if (sidx !== -1) allSchedules.splice(sidx, 1);
+    const period = allPeriods.find((p) => p.id === periodId);
+    if (period) {
+      period.status = "archived";
+      persistSchedulePeriods();
+      if (selectedPeriodId === periodId) setSelectedPeriodId(null);
+      rerender();
+      toast.success("Период перемещён в архив");
     }
-    persistSchedulePeriods();
-    persistSchedules();
-    if (selectedPeriodId === periodId) setSelectedPeriodId(null);
-    rerender();
   };
 
   const handleApprovePeriod = (periodId: string) => {
@@ -129,6 +140,7 @@ function SchedulesPage() {
       period.status = "active";
       persistSchedulePeriods();
       rerender();
+      toast.success("Расписание утверждено");
     }
   };
 
@@ -137,6 +149,18 @@ function SchedulesPage() {
     if (idx !== -1) allSchedules.splice(idx, 1);
     persistSchedules();
     rerender();
+    toast.success("Занятие удалено");
+  };
+
+  const handleDuplicatePeriod = (periodId: string) => {
+    const newPeriod = duplicatePeriod(periodId);
+    if (newPeriod) {
+      persistSchedulePeriods();
+      persistSchedules();
+      rerender();
+      toast.success(`Создан период ${newPeriod.periodStart} — ${newPeriod.periodEnd}`);
+      setSelectedPeriodId(newPeriod.id);
+    }
   };
 
   if (loading) {
@@ -154,9 +178,13 @@ function SchedulesPage() {
           period={selectedPeriod}
           schedules={periodSchedules}
           canEdit={canEdit(selectedPeriod)}
+          periodStatus={getPeriodStatus(selectedPeriod)}
           onBack={() => setSelectedPeriodId(null)}
           onApprove={() => handleApprovePeriod(selectedPeriod.id)}
-          onAddSchedule={() => setShowAddSchedule(true)}
+          onEditPeriod={() => setShowEditPeriod(selectedPeriod.id)}
+          onDeletePeriod={() => handleDeletePeriod(selectedPeriod.id)}
+          onDuplicatePeriod={() => handleDuplicatePeriod(selectedPeriod.id)}
+          onAddSchedule={(day) => setAddScheduleDay(day ?? -1)}
           onEditSchedule={(id) => setShowEditSchedule(id)}
           onDeleteSchedule={handleDeleteSchedule}
         />
@@ -192,11 +220,7 @@ function SchedulesPage() {
                 <option value="draft">Черновики</option>
                 <option value="archived">Архив</option>
               </select>
-              {isCoach && (
-                <Button onClick={() => setShowCreatePeriod(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
-                  <Plus className="mr-2 h-4 w-4" /> Создать период
-                </Button>
-              )}
+
             </div>
           </div>
 
@@ -207,24 +231,31 @@ function SchedulesPage() {
               return (
                 <Card
                   key={p.id}
-                  className="cursor-pointer border-2 p-5 shadow-[var(--shadow-card)] transition hover:border-primary/40"
+                  className="group cursor-pointer border border-border p-5 shadow-[var(--shadow-card)] transition hover:border-primary/40 hover:shadow-md"
                   onClick={() => setSelectedPeriodId(p.id)}
                 >
                   <div className="flex items-start justify-between">
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-display text-base font-bold text-secondary">{getGroupName(p.groupId)}</h3>
-                      <p className="text-xs text-muted-foreground">{p.coachName}</p>
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                          effectiveStatus === "active" ? "bg-[color:var(--success)]"
+                          : effectiveStatus === "draft" ? "bg-muted-foreground"
+                          : "bg-border"
+                        }`} />
+                        <h3 className="truncate font-display text-base font-bold text-secondary">{getGroupName(p.groupId)}</h3>
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{p.coachName}</p>
                     </div>
                     <StatusBadge status={effectiveStatus} />
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <CalendarDays className="h-3.5 w-3.5" />
                       {p.periodStart} — {p.periodEnd}
                     </span>
                     <span className="flex items-center gap-1">
                       <Clock className="h-3.5 w-3.5" />
-                      {schedCount} занятий
+                      {schedCount} {schedCount === 1 ? "занятие" : schedCount < 5 ? "занятия" : "занятий"}
                     </span>
                   </div>
                   <div className="mt-2">
@@ -232,28 +263,9 @@ function SchedulesPage() {
                       {p.discipline}
                     </Badge>
                   </div>
-                  {canEdit(p) && (
-                    <div className="mt-3 flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={(e) => { e.stopPropagation(); setShowEditPeriod(p.id); }}
-                      >
-                        <Edit3 className="mr-1 h-3 w-3" /> Изменить
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
-                        onClick={(e) => { e.stopPropagation(); handleDeletePeriod(p.id); }}
-                      >
-                        <Trash2 className="mr-1 h-3 w-3" /> Удалить
-                      </Button>
-                    </div>
-                  )}
+
                   {effectiveStatus === "draft" && isCoach && p.coachId === user?.id && (
-                    <div className="mt-2">
+                    <div className="mt-3">
                       <Button
                         size="sm"
                         className="h-7 w-full text-xs bg-[color:var(--success)] text-white hover:bg-[color:var(--success)]/90"
@@ -275,58 +287,63 @@ function SchedulesPage() {
 
           {crossSchedules.length > 0 && (
             <section className="mt-8">
-              <h3 className="mb-4 font-display text-lg font-bold text-secondary">Неделя</h3>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
-                {[1, 2, 3, 4, 5, 6, 7].map((day) => {
-                  const daySchedules = crossGroupedByDay.get(day) ?? [];
-                  return (
-                    <Card key={day} className="border border-border shadow-[var(--shadow-card)]">
-                      <div className="border-b border-border bg-muted/20 px-4 py-2.5">
-                        <h3 className="text-sm font-bold text-secondary">{dayNames[day - 1]}</h3>
-                        <p className="text-xs text-muted-foreground">{daySchedules.length} занятий</p>
-                      </div>
-                      <div className="space-y-2 p-3">
-                        {daySchedules.length === 0 && (
-                          <p className="py-4 text-center text-xs text-muted-foreground">Нет занятий</p>
-                        )}
-                        {daySchedules.map((s) => (
-                          <div key={s.id} className="rounded-lg border border-border bg-card p-3">
-                            <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Clock className="h-3 w-3" />
-                              <span className="font-medium text-foreground">{s.timeStart}</span>
-                              <span>–</span>
-                              <span className="font-medium text-foreground">{s.timeEnd}</span>
-                            </div>
-                            <p className="text-sm font-medium text-secondary">{getGroupName(s.groupId)}</p>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <MapPin className="h-3 w-3" /> {s.room}
-                              </span>
-                              <Badge variant="outline" className="border-primary/30 bg-primary/5 font-normal text-primary text-[10px]">
-                                {s.discipline}
-                              </Badge>
-                            </div>
+              <button
+                onClick={() => setShowCrossSchedule(!showCrossSchedule)}
+                className="mb-4 flex items-center gap-2 text-left font-display text-lg font-bold text-secondary transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded-md"
+              >
+                <ChevronDown className={`h-4 w-4 transition-transform ${showCrossSchedule ? "rotate-0" : "-rotate-90"}`} />
+                Сводка на неделю
+              </button>
+              {showCrossSchedule && (
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
+                  {[1, 2, 3, 4, 5, 6, 7].map((day) => {
+                    const daySchedules = crossGroupedByDay.get(day) ?? [];
+                    const isToday = new Date().getDay() === day || (day === 7 && new Date().getDay() === 0);
+                    return (
+                      <Card key={day} className={`border shadow-[var(--shadow-card)] ${
+                        isToday ? "border-primary/40 bg-primary/[0.02]" : "border-border"
+                      }`}>
+                        <div className={`border-b px-4 py-2.5 ${
+                          isToday ? "border-primary/20 bg-primary/5" : "border-border bg-muted/20"
+                        }`}>
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-bold text-secondary">{dayNames[day - 1]}</h3>
+                            {isToday && (
+                              <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Сегодня</span>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
+                          <p className="text-xs text-muted-foreground">{daySchedules.length} занятий</p>
+                        </div>
+                        <div className="space-y-1.5 p-2.5">
+                          {daySchedules.length === 0 && (
+                            <p className="py-4 text-center text-xs text-muted-foreground">Нет занятий</p>
+                          )}
+                          {daySchedules.map((s) => (
+                            <div key={s.id} className="rounded-lg border border-border bg-card px-2.5 py-2 text-xs transition hover:border-primary/30">
+                              <div className="flex items-center gap-2 font-medium text-foreground">
+                                <Clock className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                <span>{s.timeStart} – {s.timeEnd}</span>
+                              </div>
+                              <p className="mt-0.5 text-sm font-medium text-secondary">{getGroupName(s.groupId)}</p>
+                              <div className="mt-1 flex items-center gap-2 text-muted-foreground">
+                                <span className="flex items-center gap-0.5">{s.room}</span>
+                                <Badge variant="outline" className="border-primary/30 bg-primary/5 font-normal text-primary text-[10px]">
+                                  {s.discipline}
+                                </Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           )}
         </>
       )}
 
-      {showCreatePeriod && (
-        <CreatePeriodModal
-          userGroups={userGroups}
-          coachId={user?.id ?? ""}
-          coachName={user?.coachName ?? ""}
-          onClose={() => setShowCreatePeriod(false)}
-          onSaved={() => { persistSchedulePeriods(); persistSchedules(); rerender(); }}
-        />
-      )}
       {showEditPeriod && (
         <EditPeriodModal
           period={allPeriods.find((p) => p.id === showEditPeriod)!}
@@ -334,11 +351,12 @@ function SchedulesPage() {
           onSaved={() => { persistSchedulePeriods(); rerender(); }}
         />
       )}
-      {showAddSchedule && selectedPeriod && (
+      {addScheduleDay !== null && selectedPeriod && (
         <ScheduleFormModal
           period={selectedPeriod}
           editScheduleId={null}
-          onClose={() => setShowAddSchedule(false)}
+          presetDay={addScheduleDay !== -1 ? addScheduleDay : null}
+          onClose={() => setAddScheduleDay(null)}
           onSaved={() => { persistSchedules(); rerender(); }}
         />
       )}
@@ -350,6 +368,8 @@ function SchedulesPage() {
           onSaved={() => { persistSchedules(); rerender(); }}
         />
       )}
+
+
     </AppShell>
   );
 }
@@ -358,8 +378,12 @@ function PeriodDetailView({
   period,
   schedules,
   canEdit: editable,
+  periodStatus,
   onBack,
   onApprove,
+  onEditPeriod,
+  onDeletePeriod,
+  onDuplicatePeriod,
   onAddSchedule,
   onEditSchedule,
   onDeleteSchedule,
@@ -367,13 +391,49 @@ function PeriodDetailView({
   period: SchedulePeriod;
   schedules: Schedule[];
   canEdit: boolean;
+  periodStatus: string;
   onBack: () => void;
   onApprove: () => void;
-  onAddSchedule: () => void;
+  onEditPeriod: () => void;
+  onDeletePeriod: () => void;
+  onDuplicatePeriod: () => void;
+  onAddSchedule: (day?: number) => void;
   onEditSchedule: (id: string) => void;
   onDeleteSchedule: (id: string) => void;
 }) {
-  const effectiveStatus = getPeriodStatus(period);
+  const isActive = periodStatus === "active";
+  const [pendingConfirm, setPendingConfirm] = useState<(() => void) | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const coachOffDays = useMemo(() => {
+    const { vacations, sickLeaves } = getCoachVacationPeriods(period.coachId);
+    const result = new Map<number, { type: "vacation" | "sick"; label: string }>();
+    for (let day = 1; day <= 7; day++) {
+      const start = new Date(period.periodStart + "T00:00:00");
+      const end = new Date(period.periodEnd + "T00:00:00");
+      const dayOffsets: number[] = [];
+      const d = new Date(start);
+      while (d <= end) {
+        const jsDay = d.getDay();
+        const mapped = jsDay === 0 ? 7 : jsDay;
+        if (mapped === day) dayOffsets.push(Math.floor((d.getTime() - start.getTime()) / 86400000));
+        d.setDate(d.getDate() + 1);
+      }
+      for (const offset of dayOffsets) {
+        const checkDate = new Date(start);
+        checkDate.setDate(checkDate.getDate() + offset);
+        if (dateOverlapsPeriods(checkDate, vacations)) {
+          result.set(day, { type: "vacation", label: "Отпуск" });
+          break;
+        }
+        if (dateOverlapsPeriods(checkDate, sickLeaves)) {
+          result.set(day, { type: "sick", label: "Больничный" });
+          break;
+        }
+      }
+    }
+    return result;
+  }, [period]);
 
   const groupedByDay = useMemo(() => {
     const map = new Map<number, Schedule[]>();
@@ -384,17 +444,25 @@ function PeriodDetailView({
     return map;
   }, [schedules]);
 
+  const handleAction = (action: () => void, requireConfirm: boolean = false) => {
+    if (isActive || requireConfirm) {
+      setPendingConfirm(() => action);
+    } else {
+      action();
+    }
+  };
+
   return (
     <div>
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="text-muted-foreground hover:text-foreground">
+          <button onClick={onBack} className="text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded-md">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-display text-2xl font-bold text-secondary">{getGroupName(period.groupId)}</h2>
-              <StatusBadge status={effectiveStatus} />
+              <StatusBadge status={periodStatus} />
             </div>
             <p className="text-sm text-muted-foreground">
               {period.periodStart} — {period.periodEnd} · {schedules.length} занятий
@@ -402,61 +470,100 @@ function PeriodDetailView({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {effectiveStatus === "draft" && editable && (
+          {periodStatus === "draft" && editable && (
             <Button onClick={onApprove} className="bg-[color:var(--success)] text-white hover:bg-[color:var(--success)]/90">
               <Check className="mr-2 h-4 w-4" /> Утвердить
             </Button>
           )}
           {editable && (
-            <Button onClick={onAddSchedule} className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <>
+              <Button variant="outline" size="sm" onClick={onDuplicatePeriod} className="h-8 text-xs">
+                <Copy className="mr-1 h-3 w-3" /> Дублировать
+              </Button>
+              <Button variant="outline" size="sm" onClick={onEditPeriod} className="h-8 text-xs">
+                <Edit3 className="mr-1 h-3 w-3" /> Изменить период
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setConfirmDelete(true)} className="h-8 text-xs border-destructive/30 text-destructive hover:bg-destructive/10">
+                <Trash2 className="mr-1 h-3 w-3" /> Удалить
+              </Button>
+            </>
+          )}
+          {editable && (
+            <Button onClick={() => handleAction(onAddSchedule)} className="bg-primary text-primary-foreground hover:bg-primary/90">
               <Plus className="mr-2 h-4 w-4" /> Добавить занятие
             </Button>
           )}
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
         {[1, 2, 3, 4, 5, 6, 7].map((day) => {
           const daySchedules = groupedByDay.get(day) ?? [];
+          const isToday = new Date().getDay() === day || (day === 7 && new Date().getDay() === 0);
           return (
-            <Card key={day} className="border border-border shadow-[var(--shadow-card)]">
-              <div className="border-b border-border bg-muted/20 px-4 py-2.5">
-                <h3 className="text-sm font-bold text-secondary">{dayNames[day - 1]}</h3>
+            <Card key={day} className={`border shadow-[var(--shadow-card)] ${
+              isToday ? "border-primary/40 bg-primary/[0.02]" : "border-border"
+            }`}>
+              <div className={`border-b px-4 py-2.5 ${
+                isToday ? "border-primary/20 bg-primary/5" : "border-border bg-muted/20"
+              }`}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-secondary">{dayNames[day - 1]}</h3>
+                  <div className="flex items-center gap-1.5">
+                    {coachOffDays.get(day) && (
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                        coachOffDays.get(day)!.type === "vacation"
+                          ? "bg-[color:var(--warning)]/15 text-[color:var(--warning)]"
+                          : "bg-destructive/10 text-destructive"
+                      }`}>
+                        {coachOffDays.get(day)!.label}
+                      </span>
+                    )}
+                    {isToday && (
+                      <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Сегодня</span>
+                    )}
+                  </div>
+                </div>
                 <p className="text-xs text-muted-foreground">{daySchedules.length} занятий</p>
               </div>
-              <div className="space-y-2 p-3">
+              <div className="space-y-1.5 p-2.5">
                 {daySchedules.length === 0 && (
-                  <p className="py-4 text-center text-xs text-muted-foreground">Нет занятий</p>
+                  editable ? (
+                    <button
+                      onClick={() => handleAction(() => onAddSchedule(day))}
+                      className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border py-3 text-xs text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Добавить
+                    </button>
+                  ) : (
+                    <p className="py-4 text-center text-xs text-muted-foreground">Нет занятий</p>
+                  )
                 )}
                 {daySchedules.map((s) => (
-                  <div key={s.id} className="group relative rounded-lg border border-border bg-card p-3 transition hover:border-primary/30">
-                    <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" />
-                      <span className="font-medium text-foreground">{s.timeStart}</span>
-                      <span>–</span>
-                      <span className="font-medium text-foreground">{s.timeEnd}</span>
+                  <div key={s.id} className="group rounded-lg border border-border bg-card p-2.5 text-xs transition hover:border-primary/30">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Clock className="h-3 w-3 shrink-0" />
+                      <span className="font-medium text-foreground">{s.timeStart} – {s.timeEnd}</span>
                     </div>
-                    <p className="text-sm font-medium text-secondary">{getGroupName(s.groupId)}</p>
-                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <MapPin className="h-3 w-3" /> {s.room}
-                      </span>
+                    <p className="mt-0.5 text-sm font-medium text-secondary">{getGroupName(s.groupId)}</p>
+                    <div className="mt-1 flex items-center gap-1.5 text-muted-foreground">
+                      <span className="flex items-center gap-0.5">{s.room}</span>
                     </div>
                     {editable && (
-                      <div className="absolute right-1.5 top-1.5 hidden gap-1 group-hover:flex">
+                      <div className="mt-1.5 flex flex-col gap-0.5 opacity-60 transition-all group-hover:opacity-100">
                         <button
-                          onClick={() => onEditSchedule(s.id)}
-                          className="rounded-md p-1 text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+                          onClick={() => handleAction(() => onEditSchedule(s.id))}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                           title="Редактировать"
                         >
-                          <Edit3 className="h-3.5 w-3.5" />
+                          <Edit3 className="h-3 w-3" /> Ред.
                         </button>
                         <button
-                          onClick={() => onDeleteSchedule(s.id)}
-                          className="rounded-md p-1 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => handleAction(() => onDeleteSchedule(s.id), true)}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50"
                           title="Удалить"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-3 w-3" /> Удалить
                         </button>
                       </div>
                     )}
@@ -467,6 +574,47 @@ function PeriodDetailView({
           );
         })}
       </div>
+
+      <AlertDialog open={pendingConfirm !== null} onOpenChange={(open) => !open && setPendingConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Редактирование утверждённого расписания</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы уверены? Изменение затронет утверждённое расписание.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { pendingConfirm?.(); setPendingConfirm(null); }}>
+              Продолжить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Архивация периода</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>Период будет перемещён в архив. Занятия сохранятся, но расписание станет недоступно для редактирования.</p>
+                <div className="rounded-lg bg-muted/50 p-3 text-sm text-foreground">
+                  <p><span className="text-muted-foreground">Группа:</span> <strong>{getGroupName(period.groupId)}</strong></p>
+                  <p><span className="text-muted-foreground">Период:</span> <strong>{period.periodStart} — {period.periodEnd}</strong></p>
+                  <p><span className="text-muted-foreground">Занятий:</span> <strong>{schedules.length}</strong></p>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={onDeletePeriod}>
+              Архивировать
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -489,208 +637,6 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function CreatePeriodModal({
-  userGroups,
-  coachId,
-  coachName,
-  onClose,
-  onSaved,
-}: {
-  userGroups: typeof allGroups;
-  coachId: string;
-  coachName: string;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const DEFAULT_SLOT = { start: "09:00", end: "10:30", room: "" };
-  const [groupId, setGroupId] = useState(userGroups[0]?.id ?? "");
-  const [periodStart, setPeriodStart] = useState("");
-  const [periodEnd, setPeriodEnd] = useState("");
-  const [dayTimes, setDayTimes] = useState<Record<number, { start: string; end: string; room: string }>>({});
-  const [defaultRoom, setDefaultRoom] = useState("");
-
-  const selectedGroup = userGroups.find((g) => g.id === groupId);
-  const days = Object.keys(dayTimes).map(Number);
-
-  const toggleDay = (day: number) => {
-    setDayTimes((prev) => {
-      if (prev[day]) {
-        const { [day]: _, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [day]: { ...DEFAULT_SLOT, room: defaultRoom } };
-    });
-  };
-
-  const handleCreate = () => {
-    if (!periodStart || !periodEnd || days.length === 0 || !selectedGroup) return;
-    const periodId = freshSchedulePeriodId();
-    const period: SchedulePeriod = {
-      id: periodId,
-      coachId,
-      coachName,
-      groupId: selectedGroup.id,
-      discipline: selectedGroup.discipline,
-      periodStart,
-      periodEnd,
-      status: "draft",
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
-    allPeriods.push(period);
-    for (const day of days) {
-      const t = dayTimes[day];
-      allSchedules.push({
-        id: freshScheduleId(),
-        periodId,
-        coachId,
-        coachName,
-        groupId: selectedGroup.id,
-        discipline: selectedGroup.discipline,
-        dayOfWeek: day,
-        timeStart: t.start,
-        timeEnd: t.end,
-        room: t.room || "Не указано",
-      });
-    }
-    onSaved();
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h3 className="text-sm font-bold text-secondary">Новый период расписания</h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
-        </div>
-          <div className="space-y-4 p-5">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Группа *</label>
-            <select
-              value={groupId}
-              onChange={(e) => setGroupId(e.target.value)}
-              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              {userGroups.map((g) => (
-                <option key={g.id} value={g.id}>{g.name} · {g.discipline}</option>
-              ))}
-            </select>
-            {(() => {
-              const selected = userGroups.find((g) => g.id === groupId);
-              const hasActive = selected && allPeriods.some(
-                (p) => p.groupId === selected.id && p.id !== "new" && getPeriodStatus(p) === "active",
-              );
-              return hasActive ? (
-                <div className="mt-2 flex items-start gap-2 rounded-lg border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/10 p-2.5 text-xs text-muted-foreground">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--warning)]" />
-                  <span>У группы уже есть активный период. При утверждении нового, старый будет перемещён в архив.</span>
-                </div>
-              ) : null;
-            })()}
-          </div>
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Дата начала *</label>
-              <Input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} className="h-9" />
-            </div>
-            <div className="flex-1">
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Дата окончания *</label>
-              <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} className="h-9" />
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Дни недели *</label>
-            <div className="flex flex-wrap gap-1.5">
-              {dayNamesShort.map((name, idx) => {
-                const dayNum = idx + 1;
-                const active = dayNum in dayTimes;
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => toggleDay(dayNum)}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                      active
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                    }`}
-                  >
-                    {name}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Выбрано {days.length} {days.length === 1 ? "день" : days.length < 5 ? "дня" : "дней"}
-            </p>
-            {days.length > 0 && (
-              <div className="mt-3 space-y-2">
-                {Object.entries(dayTimes)
-                  .sort(([a], [b]) => Number(a) - Number(b))
-                  .map(([day, slot]) => (
-                    <div key={day} className="flex items-center gap-2">
-                      <span className="w-7 text-xs font-medium text-muted-foreground">
-                        {dayNamesShort[Number(day) - 1]}
-                      </span>
-                      <Input
-                        type="time"
-                        value={slot.start}
-                        onChange={(e) =>
-                          setDayTimes((prev) => ({
-                            ...prev,
-                            [day]: { ...prev[Number(day)], start: e.target.value },
-                          }))
-                        }
-                        className="h-8 w-[100px]"
-                      />
-                      <span className="text-xs text-muted-foreground">—</span>
-                      <Input
-                        type="time"
-                        value={slot.end}
-                        onChange={(e) =>
-                          setDayTimes((prev) => ({
-                            ...prev,
-                            [day]: { ...prev[Number(day)], end: e.target.value },
-                          }))
-                        }
-                        className="h-8 w-[100px]"
-                      />
-                      <Input
-                        value={slot.room}
-                        onChange={(e) =>
-                          setDayTimes((prev) => ({
-                            ...prev,
-                            [day]: { ...prev[Number(day)], room: e.target.value },
-                          }))
-                        }
-                        placeholder="Зал"
-                        className="h-8 w-[90px]"
-                      />
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Зал / место</label>
-            <Input
-              value={defaultRoom}
-              onChange={(e) => setDefaultRoom(e.target.value)}
-              placeholder="Зал А, спортзал…"
-              className="h-9"
-            />
-          </div>
-          <p className="text-[10px] text-muted-foreground -mt-3">
-            Новым дням присваивается зал из поля выше. Можно изменить для каждого дня отдельно.
-          </p>
-          <Button onClick={handleCreate} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
-            <Plus className="mr-1.5 h-4 w-4" /> Создать период
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function EditPeriodModal({
   period,
   onClose,
@@ -702,6 +648,10 @@ function EditPeriodModal({
 }) {
   const [periodStart, setPeriodStart] = useState(period.periodStart);
   const [periodEnd, setPeriodEnd] = useState(period.periodEnd);
+  const editPeriodModalRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    editPeriodModalRef.current?.querySelector("input,button,select")?.focus();
+  }, []);
 
   const handleSave = () => {
     if (!periodStart || !periodEnd) return;
@@ -709,14 +659,15 @@ function EditPeriodModal({
     period.periodEnd = periodEnd;
     onSaved();
     onClose();
+    toast.success("Период обновлён");
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onKeyDown={(e) => e.key === "Escape" && onClose()} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={editPeriodModalRef} className="w-full max-w-sm rounded-xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <h3 className="text-sm font-bold text-secondary">Редактировать период</h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
         </div>
         <div className="space-y-4 p-5">
           <div className="flex gap-3">
@@ -746,20 +697,26 @@ function EditPeriodModal({
 function ScheduleFormModal({
   period,
   editScheduleId,
+  presetDay,
   onClose,
   onSaved,
 }: {
   period: SchedulePeriod;
   editScheduleId: string | null;
+  presetDay?: number | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const existing = editScheduleId ? allSchedules.find((s) => s.id === editScheduleId) : null;
 
-  const [dayOfWeek, setDayOfWeek] = useState(existing?.dayOfWeek ?? 1);
+  const [dayOfWeek, setDayOfWeek] = useState(existing?.dayOfWeek ?? presetDay ?? 1);
   const [timeStart, setTimeStart] = useState(existing?.timeStart ?? "09:00");
   const [timeEnd, setTimeEnd] = useState(existing?.timeEnd ?? "10:30");
   const [room, setRoom] = useState(existing?.room ?? "");
+  const formModalRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    formModalRef.current?.querySelector("input,button,select")?.focus();
+  }, []);
 
   const handleSave = () => {
     if (existing) {
@@ -783,16 +740,17 @@ function ScheduleFormModal({
     }
     onSaved();
     onClose();
+    toast.success(existing ? "Занятие обновлено" : "Занятие добавлено");
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onKeyDown={(e) => e.key === "Escape" && onClose()} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={formModalRef} className="w-full max-w-sm rounded-xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <h3 className="text-sm font-bold text-secondary">
             {editScheduleId ? "Редактировать занятие" : "Новое занятие"}
           </h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
         </div>
         <div className="space-y-4 p-5">
           <div>

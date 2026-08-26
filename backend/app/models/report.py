@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,6 +33,13 @@ class Report(TimestampMixin, Base):
     )
     coach_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("coaches.id"), nullable=True,
+    )
+    program_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("incentive_programs.id"), nullable=True,
+    )
+    payout_tier: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    commission_protocol_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("commission_protocols.id"), nullable=True,
     )
     period_type: Mapped[str] = mapped_column(String(20), nullable=False)
     period_start: Mapped[Date] = mapped_column(Date, nullable=False)

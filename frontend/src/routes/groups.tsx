@@ -605,7 +605,7 @@ function AddAthleteModal({
             </button>
             <h3 className="text-sm font-bold text-secondary">Новый спортсмен</h3>
             <div className="ml-auto">
-              <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+              <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
             </div>
           </div>
           <div className="relative">
@@ -640,7 +640,7 @@ function AddAthleteModal({
                 Новый
               </button>
             </div>
-            <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+            <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
           </div>
 
           <div className="p-4">
@@ -729,7 +729,7 @@ function EditPeriodForm({
       <span className="text-xs text-muted-foreground">—</span>
       <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} className="h-7 w-[130px] text-xs" />
       <Button size="sm" className="h-7 text-xs" onClick={handleSave}>Сохранить</Button>
-      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onClose}>✕</Button>
+      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onClose}><X className="h-3.5 w-3.5" /></Button>
     </div>
   );
 }
@@ -807,9 +807,10 @@ function CreatePeriodForGroupModal({
       <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <h3 className="text-sm font-bold text-secondary">Новый период · {groupName}</h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
         </div>
         <div className="space-y-4 p-5">
+          <p className="text-xs font-medium text-muted-foreground">Период действия расписания</p>
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Дата начала *</label>

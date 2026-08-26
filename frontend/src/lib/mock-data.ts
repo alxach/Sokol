@@ -205,6 +205,10 @@ export interface ReportField {
   label: string;
   type: "number" | "text" | "textarea";
   norm: string;
+  confirmationForm?: "mandatory_in_report" | "on_request" | "none";
+  normFull?: number | null;
+  normBasic?: number | null;
+  unit?: string;
 }
 
 export const monthlyReportTemplate: ReportTemplate = {
@@ -214,11 +218,11 @@ export const monthlyReportTemplate: ReportTemplate = {
   type: "monthly",
   description: "Ежемесячный отчёт тренера-преподавателя ЦСЕ. Заполняется по итогам работы за месяц.",
   fields: [
-    { key: "athletes_count", label: "Кол-во занимающихся спортсменов до 21 года на безвозмездной основе", type: "number", norm: "20 человек" },
-    { key: "hours_per_week", label: "Кол-во часов для занятий со спортсменами до 21 года", type: "number", norm: "6 часов в неделю" },
-    { key: "special_events", label: "Мероприятия с особыми категориями населения (дети с ОВЗ, школы)", type: "textarea", norm: "Не менее 1 раза в месяц" },
-    { key: "sport_events", label: "Спортивные мероприятия на развитие ЦСЕ (соревнования, сборы, мастер-классы)", type: "textarea", norm: "Не менее 1 раза в месяц" },
-    { key: "development_events", label: "Мероприятия на развитие спортсменов ЦСЕ (беседы, лекции)", type: "textarea", norm: "Не менее 1 раза в месяц" },
+    { key: "athletes_count", label: "Кол-во занимающихся спортсменов до 21 года на безвозмездной основе", type: "number", norm: "≥30 (50К) / ≥15 (25К) чел.", confirmationForm: "mandatory_in_report", normFull: 30, normBasic: 15, unit: "чел." },
+    { key: "hours_per_week", label: "Кол-во часов для занятий со спортсменами до 21 года", type: "number", norm: "≥9 (50К) / ≥4,5 (25К) ч/нед", confirmationForm: "on_request", normFull: 9, normBasic: 4.5, unit: "ч/нед" },
+    { key: "special_events", label: "Мероприятия с особыми категориями населения (дети с ОВЗ, школы)", type: "textarea", norm: "Не менее 1 раза в месяц", confirmationForm: "mandatory_in_report", normFull: 1, normBasic: 1, unit: "меропр./мес" },
+    { key: "sport_events", label: "Спортивные мероприятия на развитие ЦСЕ (соревнования, сборы, мастер-классы)", type: "textarea", norm: "Не менее 1 раза в месяц", confirmationForm: "mandatory_in_report", normFull: 1, normBasic: 1, unit: "меропр./мес" },
+    { key: "development_events", label: "Мероприятия на развитие спортсменов ЦСЕ (беседы, лекции)", type: "textarea", norm: "Не менее 1 раза в месяц", confirmationForm: "mandatory_in_report", normFull: 1, normBasic: 1, unit: "меропр./мес" },
   ],
 };
 
@@ -233,6 +237,9 @@ export interface Report {
   sport: string;
   group: string;
   centerId: string;
+  programId?: string;
+  payoutTier?: number;
+  commissionProtocolId?: string;
   periodStart: string;
   periodEnd: string;
   data: Record<string, string | number>;
@@ -441,18 +448,102 @@ export type PlanStatus = "draft" | "submitted" | "approved" | "rejected";
 
 export type PlanCategoryId = "3" | "4" | "5";
 
-export const planCategories: Record<PlanCategoryId, { label: string; shortLabel: string }> = {
+export interface PlanCategoryInfo {
+  label: string;
+  shortLabel: string;
+  requirementSummary: string;
+  allowedLocations: string[];
+  eventTypes: string[];
+  participantCategories: string[];
+  limitations: string[];
+}
+
+export const planCategories: Record<PlanCategoryId, PlanCategoryInfo> = {
   "3": {
-    label: "Проведение мероприятий с определёнными категориями населения",
+    label: "Проведение мероприятий с определёнными категориями населения, привлечение их к занятиям физической культурой и спортом по направлениям спортивных единоборств. Повышение узнаваемости и имиджа ЦСЕ среди населения города.",
     shortLabel: "Мероприятия с категориями населения",
+    requirementSummary: "Не менее 1 мероприятия в месяц. Все мероприятия проводятся на безвозмездной основе.",
+    allowedLocations: [
+      "ЦСЕ (основное место проведения)",
+      "Дошкольные и общеобразовательные учреждения",
+      "Детские дома, школы-интернаты и аналогичные учреждения",
+      "Городские площадки в рамках общегородских мероприятий (с символикой ЦСЕ «Сокол»)",
+    ],
+    eventTypes: [
+      "Зарядки и ОФП",
+      "Весёлые/семейные старты, дни здоровья, забеги",
+      "Работа со школами: уроки физкультуры, открытые уроки, мастер-классы с тренером в ЦСЕ",
+      "Мероприятия в рамках всероссийского проекта «Выбор сильных»",
+      "Экскурсии по ЦСЕ, день открытых дверей",
+      "Общегородские мероприятия с символикой ЦСЕ «Сокол»",
+    ],
+    participantCategories: [
+      "Лица до 18 лет (включительно), не занимающиеся в ЦСЕ",
+      "Родители (законные представители) спортсменов ЦСЕ",
+      "Старшее поколение",
+      "Лица с ограниченными возможностями здоровья; инвалиды",
+      "Дети, оставшиеся без попечения родителей",
+      "Несовершеннолетние в социально опасном положении / «трудные» подростки",
+      "Ветераны боевых действий и члены их семей",
+      "Работники предприятий Группы компаний РУСАЛ и Ен+",
+    ],
+    limitations: [
+      "Одно и то же мероприятие не могут указывать два и более тренера",
+      "Исключение: крупные мероприятия (>60 участников для 2 тренеров, >90 для 3 и т.д.) — каждый тренер указывает личный вклад",
+      "Допускаются совместные занятия со своими воспитанниками (спортсменами ЦСЕ) и другими категориями лиц",
+      "Вне ЦСЕ — только дошкольные, общеобразовательные учреждения, детские дома, а также городские площадки с символикой ЦСЕ",
+    ],
   },
   "4": {
     label: "Проведение соревнований на территории ЦСЕ; учебно-тренировочных сборов; мастер-классов от чемпионов на территории ЦСЕ для спортсменов ЦСЕ",
     shortLabel: "Соревнования, УТС, мастер-классы",
+    requirementSummary: "Не менее 1 мероприятия в месяц. При невозможности — допускается проведение второго мероприятия из раздела 3 (с указанием в разделе 4).",
+    allowedLocations: [
+      "ЦСЕ (соревнования, мастер-классы)",
+      "Выездные УТС (спортивные базы, учебно-тренировочные центры, иные оборудованные локации)",
+    ],
+    eventTypes: [
+      "Соревнования на территории ЦСЕ (турниры, первенства)",
+      "Летние учебно-тренировочные сборы (УТС) — выездные, сроком не менее 7 дней",
+      "Мастер-классы от чемпионов на территории ЦСЕ (звание — не ниже Мастера спорта, достижение — не менее призёра Чемпионата/Первенства России/СССР)",
+    ],
+    participantCategories: [
+      "Спортсмены ЦСЕ",
+      "Спортсмены других клубов города/района",
+    ],
+    limitations: [
+      "Одно и то же мероприятие не могут указывать два и более тренера",
+      "Исключение: крупные мероприятия (>60 участников для 2 тренеров, >90 для 3 и т.д.) — каждый тренер указывает личный вклад",
+      "УТС указывается в отчёте один раз, независимо от перехода с месяца на месяц",
+      "Звание чемпиона для мастер-класса — не ниже Мастера спорта, призёр ЧР/ПР/СССР",
+    ],
   },
   "5": {
     label: "Проведение мероприятий, направленных на развитие спортсменов ЦСЕ",
     shortLabel: "Развитие спортсменов",
+    requirementSummary: "Не менее 1 раза в месяц. Лекции не должны составлять более половины всех мероприятий за год.",
+    allowedLocations: [
+      "ЦСЕ (основное место)",
+      "Выездные площадки (театры, музеи, экскурсии)",
+    ],
+    eventTypes: [
+      "Лекции (спортивная анатомия, физиология, психология, медицина, профилактика зависимостей, безопасность)",
+      "Встречи с известными спортсменами и тренерами",
+      "Профориентационные беседы (с участием МВД, МЧС, ветеранов, работников промышленности)",
+      "Выездные экскурсии (пожарная часть, полиция, заводы и т.д.)",
+      "Семинары, тренинги, деловые игры (первая помощь, МЧС и др.)",
+      "Походы в театр, музей, экскурсии по городу",
+      "Социально-экологические и волонтёрские мероприятия",
+    ],
+    participantCategories: [
+      "Спортсмены ЦСЕ",
+    ],
+    limitations: [
+      "Лекции — не более 50% от всех мероприятий за календарный год",
+      "Одно и то же мероприятие не могут совместно проводить более двух тренеров ЦСЕ (для лекций, викторин, просмотров, фильмов)",
+      "Для встреч, экскурсий, бесед — не более двух тренеров совместно",
+      "Исключение: крупные мероприятия с более 100 участниками",
+    ],
   },
 };
 
@@ -564,6 +655,7 @@ export interface Center {
   city: string;
   address: string;
   phone: string;
+  centerType: string;
   athletes: number;
   coaches: number;
   groups: number;
@@ -575,9 +667,9 @@ export interface Center {
 }
 
 export const centers: Center[] = [
-  { id: "center-1", name: "ЦСЕ «Сокол» — Москва", city: "Москва", address: "ул. Спортивная, 12", phone: "+7 (495) 111-11-11", athletes: 28, coaches: 4, groups: 7, gold: 42, silver: 18, bronze: 9, activeAthletes: 24, avgEfficiency: 90 },
-  { id: "center-2", name: "ЦСЕ «Сокол» — Казань", city: "Казань", address: "ул. Батыршина, 5", phone: "+7 (843) 222-22-22", athletes: 22, coaches: 3, groups: 6, gold: 35, silver: 14, bronze: 7, activeAthletes: 18, avgEfficiency: 85 },
-  { id: "center-3", name: "ЦСЕ «Сокол» — Екатеринбург", city: "Екатеринбург", address: "пр. Ленина, 88", phone: "+7 (343) 333-33-33", athletes: 15, coaches: 2, groups: 4, gold: 18, silver: 9, bronze: 6, activeAthletes: 12, avgEfficiency: 78 },
+  { id: "center-1", name: "ЦСЕ «Сокол» — Москва", city: "Москва", address: "ул. Спортивная, 12", phone: "+7 (495) 111-11-11", centerType: "cse", athletes: 28, coaches: 4, groups: 7, gold: 42, silver: 18, bronze: 9, activeAthletes: 24, avgEfficiency: 90 },
+  { id: "center-2", name: "ЦСЕ «Сокол» — Казань", city: "Казань", address: "ул. Батыршина, 5", phone: "+7 (843) 222-22-22", centerType: "cse", athletes: 22, coaches: 3, groups: 6, gold: 35, silver: 14, bronze: 7, activeAthletes: 18, avgEfficiency: 85 },
+  { id: "center-3", name: "ЦСЕ «Сокол» — Екатеринбург", city: "Екатеринбург", address: "пр. Ленина, 88", phone: "+7 (343) 333-33-33", centerType: "cse", athletes: 15, coaches: 2, groups: 4, gold: 18, silver: 9, bronze: 6, activeAthletes: 12, avgEfficiency: 78 },
 ];
 
 export function getCenterIdByCoachName(coachName: string): string {
@@ -592,6 +684,67 @@ export function archiveOtherActivePeriods(period: SchedulePeriod) {
       p.status = "archived";
     }
   }
+}
+
+export function duplicatePeriod(sourcePeriodId: string): SchedulePeriod | null {
+  const source = schedulePeriods.find((p) => p.id === sourcePeriodId);
+  if (!source) return null;
+  const addYear = (dateStr: string) => {
+    const d = new Date(dateStr + "T00:00:00");
+    d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().slice(0, 10);
+  };
+  const newPeriodId = freshSchedulePeriodId();
+  const newPeriod: SchedulePeriod = {
+    id: newPeriodId,
+    coachId: source.coachId,
+    coachName: source.coachName,
+    groupId: source.groupId,
+    discipline: source.discipline,
+    periodStart: addYear(source.periodStart),
+    periodEnd: addYear(source.periodEnd),
+    status: "draft",
+    createdAt: new Date().toISOString().slice(0, 10),
+  };
+  schedulePeriods.push(newPeriod);
+  const sourceSchedules = schedules.filter((s) => s.periodId === sourcePeriodId);
+  for (const s of sourceSchedules) {
+    schedules.push({
+      id: freshScheduleId(),
+      periodId: newPeriodId,
+      coachId: s.coachId,
+      coachName: s.coachName,
+      groupId: s.groupId,
+      discipline: s.discipline,
+      dayOfWeek: s.dayOfWeek,
+      timeStart: s.timeStart,
+      timeEnd: s.timeEnd,
+      room: s.room,
+    });
+  }
+  return newPeriod;
+}
+
+export function dateOverlapsPeriods(
+  date: Date,
+  periods: VacationPeriod[] | undefined,
+): boolean {
+  if (!periods || periods.length === 0) return false;
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return periods.some((p) => {
+    const start = new Date(p.start + "T00:00:00");
+    const end = new Date(p.end + "T00:00:00");
+    return d >= start && d <= end;
+  });
+}
+
+export function getCoachVacationPeriods(coachId: string): { vacations: VacationPeriod[]; sickLeaves: VacationPeriod[] } {
+  const coach = coaches.find((c) => c.id === coachId);
+  return {
+    vacations: coach?.vacations ?? [],
+    sickLeaves: coach?.sickLeaves ?? [],
+  };
 }
 
 export function getGroupById(groupId: string): Group | undefined {
@@ -632,4 +785,195 @@ export function getCenterIdByCity(city: string): string {
     "Уфа": "center-2",
   };
   return map[city] ?? "center-1";
+}
+
+// ─── Incentive Program (ADR-019, Положение ред. 8) ──────────────────────────
+
+export interface IncentiveProgram {
+  id: string;
+  name: string;
+  regulationNumber: string;
+  regulationDate: string;
+  revision: number;
+  maxPayout: number;
+  minPayout: number;
+  ndflRate: number;
+  insuranceRate: number;
+  isDiscretionary: boolean;
+  status: "active" | "archived";
+}
+
+export const incentivePrograms: IncentiveProgram[] = [
+  {
+    id: "prog-1",
+    name: "Положение о порядке материального стимулирования тренеров",
+    regulationNumber: "ЦСиЗ-26-П022",
+    regulationDate: "09.07.2026",
+    revision: 8,
+    maxPayout: 50000,
+    minPayout: 25000,
+    ndflRate: 13.0,
+    insuranceRate: 30.2,
+    isDiscretionary: true,
+    status: "active",
+  },
+];
+
+// ─── Report extensions (v8) ─────────────────────────────────────────────────
+
+export type ConfirmationForm = "mandatory_in_report" | "on_request" | "none";
+
+export interface ReportFieldExtension {
+  key: string;
+  confirmationForm: ConfirmationForm;
+  normFull: number | null;   // ≥ for 50K tier
+  normBasic: number | null;  // ≥ for 25K tier
+  unit: string;
+}
+
+export const reportFieldExtensions: ReportFieldExtension[] = [
+  { key: "athletes_count", confirmationForm: "mandatory_in_report", normFull: 30, normBasic: 15, unit: "чел." },
+  { key: "hours_per_week", confirmationForm: "on_request", normFull: 9, normBasic: 4.5, unit: "ч/нед" },
+  { key: "special_events", confirmationForm: "mandatory_in_report", normFull: 1, normBasic: 1, unit: "меропр./мес" },
+  { key: "sport_events", confirmationForm: "mandatory_in_report", normFull: 1, normBasic: 1, unit: "меропр./мес" },
+  { key: "development_events", confirmationForm: "mandatory_in_report", normFull: 1, normBasic: 1, unit: "меропр./мес" },
+];
+
+// ─── Payout calculation (v8, Приложение №6) ─────────────────────────────────
+
+export function calculateGross(net: number, ndflRate: number, insuranceRate: number): number {
+  const divisor = 1 - ndflRate / 100 - insuranceRate / 100;
+  return Math.round((net / divisor) * 100) / 100;
+}
+
+export function calculateNdf(gross: number, ndflRate: number): number {
+  return Math.round(gross * ndflRate / 100 * 100) / 100;
+}
+
+export function calculateInsurance(gross: number, insuranceRate: number): number {
+  return Math.round(gross * insuranceRate / 100 * 100) / 100;
+}
+
+// ─── Report auto-fill helpers ───────────────────────────────────────────────
+
+const RUSSIAN_MONTHS = [
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+];
+
+export function parseDdMmYyyy(dateStr: string): Date | null {
+  const parts = dateStr.split(".");
+  if (parts.length !== 3) return null;
+  const [dd, mm, yyyy] = parts.map(Number);
+  if (!dd || !mm || !yyyy) return null;
+  return new Date(yyyy, mm - 1, dd);
+}
+
+export function getMonthNameFromDate(dateStr: string): string | null {
+  const d = parseDdMmYyyy(dateStr);
+  if (!d) return null;
+  return RUSSIAN_MONTHS[d.getMonth()];
+}
+
+export function countAthletesUnder21(coachId: string): number {
+  const coachGroupIds = groups
+    .filter((g) => g.coachId === coachId)
+    .map((g) => g.id);
+  const athleteIdsInGroups = new Set<string>();
+  for (const g of groups) {
+    if (coachGroupIds.includes(g.id)) {
+      for (const id of g.athleteIds) athleteIdsInGroups.add(id);
+    }
+  }
+  return athletes.filter(
+    (a) => athleteIdsInGroups.has(a.id) && a.age <= 21,
+  ).length;
+}
+
+function timeToMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+
+export function calculateWeeklyHours(
+  coachId: string,
+  periodStart: string,
+  periodEnd: string,
+): number {
+  const start = parseDdMmYyyy(periodStart);
+  const end = parseDdMmYyyy(periodEnd);
+  if (!start || !end) return 0;
+
+  const overlapping = schedulePeriods.filter((sp) => {
+    if (sp.coachId !== coachId) return false;
+    const spStatus = getPeriodStatus(sp);
+    if (spStatus === "archived") return false;
+    const spStart = new Date(sp.periodStart + "T00:00:00");
+    const spEnd = new Date(sp.periodEnd + "T00:00:00");
+    return spStart <= end && spEnd >= start;
+  });
+
+  if (overlapping.length === 0) return 0;
+
+  const periodIds = new Set(overlapping.map((sp) => sp.id));
+  const coachSchedules = schedules.filter((s) => periodIds.has(s.periodId));
+
+  const minutesByDay: Record<number, number> = {};
+  for (const s of coachSchedules) {
+    minutesByDay[s.dayOfWeek] =
+      (minutesByDay[s.dayOfWeek] ?? 0) +
+      (timeToMinutes(s.timeEnd) - timeToMinutes(s.timeStart));
+  }
+
+  const { vacations, sickLeaves } = getCoachVacationPeriods(coachId);
+  const absences = [...vacations, ...sickLeaves];
+
+  const totalMs = end.getTime() - start.getTime();
+  const totalDays = Math.round(totalMs / 86400000) + 1;
+  const totalWeeks = totalDays / 7;
+
+  let absenceMinutes = 0;
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const jsDay = cursor.getDay();
+    const dow = jsDay === 0 ? 7 : jsDay;
+    if (minutesByDay[dow] && dateOverlapsPeriods(cursor, absences)) {
+      absenceMinutes += minutesByDay[dow];
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const totalScheduledMinutes =
+    Object.values(minutesByDay).reduce((a, b) => a + b, 0) * totalWeeks;
+  const effectiveMinutes = totalScheduledMinutes - absenceMinutes;
+
+  if (totalWeeks <= 0) return 0;
+  return Math.round((effectiveMinutes / totalWeeks / 60) * 10) / 10;
+}
+
+export function getPlanItemsForMonth(
+  coachId: string,
+  monthName: string,
+): { category3: PlanItem[]; category4: PlanItem[]; category5: PlanItem[] } {
+  const now = new Date();
+  const year = now.getFullYear();
+
+  const plan = plans.find(
+    (p) =>
+      p.coachId === coachId &&
+      p.year === year &&
+      (p.status === "approved" || p.status === "submitted"),
+  );
+
+  if (!plan) return { category3: [], category4: [], category5: [] };
+
+  const items = plan.items.filter(
+    (i) => i.month === monthName && (i.status === "approved" || i.status === "submitted"),
+  );
+
+  return {
+    category3: items.filter((i) => i.categoryId === "3"),
+    category4: items.filter((i) => i.categoryId === "4"),
+    category5: items.filter((i) => i.categoryId === "5"),
+  };
 }

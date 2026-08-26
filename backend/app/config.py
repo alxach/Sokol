@@ -1,4 +1,7 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+INSECURE_JWT_SECRETS = {"", "change-me-in-production", "test-secret-key"}
 
 
 class Settings(BaseSettings):
@@ -41,6 +44,15 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
+
+    @model_validator(mode="after")
+    def validate_jwt_secret(self) -> "Settings":
+        if not self.DEBUG and self.JWT_SECRET_KEY in INSECURE_JWT_SECRETS:
+            raise ValueError(
+                "JWT_SECRET_KEY is not secure. Set a strong value via .env "
+                "(DEBUG=True allows the default only for local development)."
+            )
+        return self
 
 
 settings = Settings()

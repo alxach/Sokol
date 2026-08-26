@@ -5,6 +5,7 @@ import { ru } from "date-fns/locale";
 import {
   ClipboardList, Save, Calendar, Users, UserCog,
   CalendarIcon, ChevronLeft, ChevronRight,
+  Check, X, FileText,
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
@@ -475,7 +476,7 @@ function AttendancePage() {
                                     : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
                                 }`}
                               >
-                                {s === "present" ? "✅" : s === "absent" ? "❌" : "📄"}
+                                {s === "present" ? <Check className="h-3.5 w-3.5" /> : s === "absent" ? <X className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
                               </button>
                             ))}
                           </div>

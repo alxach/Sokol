@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "appRoot": "C:\\Proj\\Sokol\\frontend",
+  "repoRoot": "C:\\Proj\\Sokol",
+  "contextRoot": "C:\\Proj\\Sokol",
+  "sessionRoot": "C:\\Proj\\Sokol\\frontend\\.impeccable\\live",
+  "productPath": "C:\\Proj\\Sokol\\PRODUCT.md",
+  "designPath": "C:\\Proj\\Sokol\\DESIGN.md",
+  "resolvedFrom": "candidate:frontend"
+}

@@ -71,3 +71,47 @@
 - Убрать any у progress в CoachResponse
 - Переименовать schedules → schedule в sidemenu
 - Починить agentmemory HTTP API на Windows (III engine routing bug)
+
+---
+
+# Session Log: impeccable v4 update + PRODUCT.md migration + live-mode setup
+
+## Date
+2026-08-23
+
+## Context
+Продолжение сессии ADR-021 (см. память агента). Пользователь запросил аудит навыков дизайна, обновление impeccable и настройку live-mode перед перезапуском ПК.
+
+## 1. Impeccable skill updated 3.9.1 -> 4.1.1
+- Команда: `npx --yes impeccable update`
+- Обновлены инсталляции: `.opencode/skills/impeccable/` + `.github/agents/` (Copilot), hooks в `.github`
+- npm-пакет `impeccable` (3.6.0) — тёзка, НЕ источник обновлений. Источник: `https://impeccable.style/api/version`
+- Кеш проверок: `~/.impeccable/update-check.json` (полл раз в сутки)
+- v4 breaking changes: ось регистров brand/product заменена на 4 «режима посетителя»; удалены `reference/product.md`, `brand.md`, `codex.md`, `interaction-design.md`; добавлены `new-work.md`, `routing.md`, `visualize.md`, `operate.md`, `doctor.md`, `ios.md`, `android.md`, `craft-floor.md`, нативные варианты
+
+## 2. PRODUCT.md migrated to v4 schema
+- Стамп: `<!-- impeccable:product-schema 1 -->`
+- Секция `## Register` удалена (упразднена в v4) — подтверждено пользователем
+- Новые секции: Platform=web; Positioning (внутренняя система сети ЦСЕ, не SaaS); Operating Context (регламентный цикл ЦСЕ + ежедневная работа зала); Brand Commitments (обязательные и неизменные: SVG-логотип, Brandbook.pdf, цвета #467FC0/#09234C/#F4A838, Manrope/Inter); Evidence on Hand (реальные документы в корне репо — НЕ КОММИТИТЬ); Product Principles; Capabilities and Constraints (undecided: VK Mini App, QR, Flutter)
+
+## 3. Live mode configured
+- Конфиг: `frontend/.impeccable/live/config.json`
+  - files: ["src/routes/__root.tsx"], insertBefore "<Scripts", commentSyntax jsx, cspChecked: true
+- CSP не обнаружен (`detect-csp.mjs` -> shape null) — патч не требовался
+- Boot: `node .opencode/skills/impeccable/scripts/live.mjs` из КОРНЯ репо -> ok:true, helper server port 8400, appRoot=frontend, context найден в корне
+
+## Gotchas
+- `live.mjs` запускать из корня `C:\Proj\Sokol`, не из `frontend/` — иначе `context_missing` (PRODUCT/DESIGN ищутся вверх от git root)
+- Первичный boot при config_missing показывает путь конфига относительно app root
+- Хвост `docs/session-log.md` (июньские секции) записан в CP1251 и побит — оставлен как есть, новые записи только UTF-8
+
+## Uncommitted state (перед рестартом)
+- ~20 файлов бекенда ADR-021 (RBAC, tests, incentive_calc) — НЕ закоммичены
+- ~30 файлов обновления скилла (.opencode/skills/impeccable + .github)
+- PRODUCT.md, docs/session-log.md, frontend/.impeccable/live/config.json
+- git push --force на origin pending (история переписана filter-repo); bundle backup: C:\Users\alx\AppData\Local\Temp\opencode\sokol-pre-filter.bundle
+
+## Next steps
+- Закоммитить ADR-021 + обновление скилла (отдельными коммитами)
+- Решить force-push
+- Опционально: первая live-сессия (npm run dev -> браузер -> панель Impeccable)

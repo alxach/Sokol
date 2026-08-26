@@ -457,6 +457,8 @@ class TimestampMixin:
 | `name` | VARCHAR(200) | NOT NULL | | Название (ЦСЕ Ачинск) |
 | `region_id` | UUID | FK → regions.id | | |
 | `address` | TEXT | NULLABLE | | |
+| `city` | VARCHAR(100) | NULLABLE | | Город (добавлен ADR-020) |
+| `center_type` | VARCHAR(50) | NOT NULL | `'cse'` | Тип центра (добавлен ADR-020) |
 | `phone` | VARCHAR(20) | NULLABLE | | |
 | `email` | VARCHAR(255) | NULLABLE | | |
 | `is_active` | BOOLEAN | NOT NULL | `true` | |
@@ -469,6 +471,8 @@ class TimestampMixin:
 - 1 → many `groups`
 - 1 → many `events`
 - 1 → many `reports`
+- 1 → many `commission_protocols`
+- 1 → many `event_plans`
 
 ---
 
@@ -787,6 +791,9 @@ class TimestampMixin:
 | `author_id` | UUID | FK → users.id | | Кто создал |
 | `center_id` | UUID | FK → centers.id | | |
 | `coach_id` | UUID | FK → coaches.id, NULLABLE | | |
+| `program_id` | UUID | FK → incentive_programs.id, NULLABLE | | Программа стимулирования (ADR-019) |
+| `payout_tier` | INTEGER | NULLABLE | | Уровень выплаты: 50000 / 25000 / 0 (ADR-019) |
+| `commission_protocol_id` | UUID | FK → commission_protocols.id, NULLABLE | | Протокол комиссии (ADR-019) |
 | `period_type` | VARCHAR(20) | NOT NULL | | `weekly`, `monthly` |
 | `period_start` | DATE | NOT NULL | | |
 | `period_end` | DATE | NOT NULL | | |
@@ -905,6 +912,149 @@ class TimestampMixin:
 
 ---
 
+### 3.36 `coach_vacations` — Отпуска тренеров (ADR-001)
+
+| Поле | Тип | Ограничения | Default | Описание |
+|------|-----|-------------|---------|----------|
+| `id` | UUID | PK | gen_random_uuid() | |
+| `coach_id` | UUID | FK → coaches.id | | |
+| `start_date` | DATE | NOT NULL | | Дата начала отпуска |
+| `end_date` | DATE | NOT NULL | | Дата окончания отпуска |
+| `created_at` | TIMESTAMPTZ | NOT NULL | now() | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | now() | |
+
+---
+
+### 3.37 `coach_sick_leaves` — Больничные тренеров (ADR-002)
+
+| Поле | Тип | Ограничения | Default | Описание |
+|------|-----|-------------|---------|----------|
+| `id` | UUID | PK | gen_random_uuid() | |
+| `coach_id` | UUID | FK → coaches.id | | |
+| `start_date` | DATE | NOT NULL | | Дата начала больничного |
+| `end_date` | DATE | NOT NULL | | Дата окончания больничного |
+| `created_at` | TIMESTAMPTZ | NOT NULL | now() | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | now() | |
+
+---
+
+### 3.38 `incentive_programs` — Программы материального стимулирования (ADR-019)
+
+| Поле | Тип | Ограничения | Default | Описание |
+|------|-----|-------------|---------|----------|
+| `id` | UUID | PK | gen_random_uuid() | |
+| `name` | VARCHAR(200) | NOT NULL | | Наименование программы |
+| `regulation_number` | VARCHAR(50) | UNIQUE, NOT NULL | | Номер приказа (ЦСиЗ-26-П022) |
+| `regulation_date` | DATE | NOT NULL | | Дата приказа |
+| `revision` | INTEGER | NOT NULL | | Номер редакции |
+| `max_payout` | INTEGER | NOT NULL | `50000` | Максимальная выплата (нетто) |
+| `min_payout` | INTEGER | NOT NULL | `25000` | Минимальная выплата (нетто) |
+| `ndfl_rate` | NUMERIC(5,2) | NOT NULL | `13.00` | Ставка НДФЛ (%) |
+| `insurance_rate` | NUMERIC(5,2) | NOT NULL | `30.20` | Ставка страховых взносов (%) |
+| `is_discretionary` | BOOLEAN | NOT NULL | `true` | Факультативность (п. 1.3 ред. 8) |
+| `status` | VARCHAR(20) | NOT NULL | `'active'` | `active` / `archived` |
+| `created_at` | TIMESTAMPTZ | NOT NULL | now() | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | now() | |
+
+---
+
+### 3.39 `commission_protocols` — Протоколы комиссии (ADR-019, Приложение №6)
+
+| Поле | Тип | Ограничения | Default | Описание |
+|------|-----|-------------|---------|----------|
+| `id` | UUID | PK | gen_random_uuid() | |
+| `number` | VARCHAR(50) | NOT NULL | | Номер протокола |
+| `date` | DATE | NOT NULL | | Дата заседания |
+| `beneficiary_name` | VARCHAR(500) | NOT NULL | | Наименование учреждения-благополучателя |
+| `period` | VARCHAR(50) | NOT NULL | | Отчётный период |
+| `center_id` | UUID | FK → centers.id | | Центр |
+| `agenda` | TEXT | NULLABLE | | Повестка дня |
+| `decisions` | TEXT | NULLABLE | | Решения |
+| `voting_for` | INTEGER | NOT NULL | `0` | Голосов «за» |
+| `voting_against` | INTEGER | NOT NULL | `0` | Голосов «против» |
+| `voting_abstained` | INTEGER | NOT NULL | `0` | Воздержались |
+| `created_at` | TIMESTAMPTZ | NOT NULL | now() | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | now() | |
+
+**Связи:**
+- 1 → many `payout_rows`
+- many → 1 `centers`
+
+---
+
+### 3.40 `payout_rows` — Строки выплат (ADR-019, Приложение №6)
+
+| Поле | Тип | Ограничения | Default | Описание |
+|------|-----|-------------|---------|----------|
+| `id` | UUID | PK | gen_random_uuid() | |
+| `protocol_id` | UUID | FK → commission_protocols.id ON DELETE CASCADE | | Протокол |
+| `coach_id` | UUID | FK → coaches.id | | Тренер |
+| `report_id` | UUID | FK → reports.id, NULLABLE | | Связанный отчёт |
+| `sport_type` | VARCHAR(100) | NOT NULL | | Вид спорта |
+| `period_start` | DATE | NOT NULL | | Начало периода |
+| `period_end` | DATE | NOT NULL | | Конец периода |
+| `gross_amount` | NUMERIC(12,2) | NOT NULL | | Сумма брутто |
+| `ndfl_amount` | NUMERIC(12,2) | NOT NULL | | НДФЛ |
+| `insurance_amount` | NUMERIC(12,2) | NOT NULL | | Страховые взносы |
+| `net_amount` | NUMERIC(12,2) | NOT NULL | | Сумма нетто (на карту) |
+| `created_at` | TIMESTAMPTZ | NOT NULL | now() | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | now() | |
+
+**Связи:**
+- many → 1 `commission_protocols`
+- many → 1 `coaches`
+- many → 1 `reports`
+
+---
+
+### 3.41 `event_plans` — Планы мероприятий тренеров (ADR-019, Приложение №7)
+
+| Поле | Тип | Ограничения | Default | Описание |
+|------|-----|-------------|---------|----------|
+| `id` | UUID | PK | gen_random_uuid() | |
+| `coach_id` | UUID | FK → coaches.id | | Тренер |
+| `center_id` | UUID | FK → centers.id | | Центр |
+| `program_id` | UUID | FK → incentive_programs.id, NULLABLE | | Программа |
+| `year` | INTEGER | NOT NULL | | Год плана |
+| `status` | VARCHAR(20) | NOT NULL | `'draft'` | `draft` / `submitted` / `approved` / `rejected` |
+| `reviewer_id` | UUID | FK → users.id, NULLABLE | | Кто проверил |
+| `review_comment` | TEXT | NULLABLE | | Комментарий проверяющего |
+| `created_at` | TIMESTAMPTZ | NOT NULL | now() | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | now() | |
+
+**Связи:**
+- 1 → many `plan_items`
+- many → 1 `coaches`
+- many → 1 `centers`
+- many → 1 `incentive_programs`
+
+---
+
+### 3.42 `plan_items` — Элементы плана мероприятий (ADR-019)
+
+| Поле | Тип | Ограничения | Default | Описание |
+|------|-----|-------------|---------|----------|
+| `id` | UUID | PK | gen_random_uuid() | |
+| `plan_id` | UUID | FK → event_plans.id ON DELETE CASCADE | | План |
+| `category` | VARCHAR(5) | NOT NULL | | Категория: `3`, `4`, `5` |
+| `quarter` | INTEGER | NOT NULL | | Квартал (1-4) |
+| `month` | INTEGER | NOT NULL | | Месяц (1-12) |
+| `date` | VARCHAR(20) | NOT NULL | | Дата (строка из Excel) |
+| `name` | VARCHAR(500) | NOT NULL | | Наименование мероприятия |
+| `description` | TEXT | NULLABLE | | Формат/содержание/цель |
+| `location` | VARCHAR(500) | NULLABLE | | Место проведения |
+| `participants_category` | VARCHAR(500) | NULLABLE | | Категория участников |
+| `participants_count` | VARCHAR(100) | NULLABLE | | Кол-во участников |
+| `status` | VARCHAR(20) | NOT NULL | `'draft'` | Статус элемента |
+| `reviewer_comment` | TEXT | NULLABLE | | Комментарий |
+| `created_at` | TIMESTAMPTZ | NOT NULL | now() | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | now() | |
+
+**Связи:**
+- many → 1 `event_plans`
+
+---
+
 ## 4. Правила внешних ключей
 
 ### 4.1 ON DELETE — стратегия
@@ -965,6 +1115,21 @@ class TimestampMixin:
 | `coaches` | `uq_coaches_user_id` | UNIQUE | `(user_id)` |
 | `coaches` | `ix_coaches_center` | BTREE | `(center_id)` |
 | `vk_users` | `uq_vk_user_id` | UNIQUE | `(vk_user_id)` |
+| `results` | `uq_result_per_competition_stage` | UNIQUE | `(competition_id, athlete_id, stage)` |
+| `commission_protocols` | `ix_protocols_center` | BTREE | `(center_id)` |
+| `event_plans` | `ix_plans_coach_year` | BTREE | `(coach_id, year)` |
+| `event_plans` | `ix_plans_center` | BTREE | `(center_id)` |
+| `plan_items` | `ix_plan_items_plan` | BTREE | `(plan_id)` |
+| `payout_rows` | `ix_payout_rows_protocol` | BTREE | `(protocol_id)` |
+| `payout_rows` | `ix_payout_rows_coach` | BTREE | `(coach_id)` |
+
+### 5.1 CHECK-ограничения
+
+| Таблица | Ограничение | Описание |
+|---------|-------------|----------|
+| `schedules` | `ck_schedules_day_of_week` | `day_of_week BETWEEN 1 AND 7` |
+| `schedules` | `ck_schedules_time_range` | `start_time < end_time` |
+| `events` | `ck_events_date_range` | `start_date <= end_date` |
 
 ---
 

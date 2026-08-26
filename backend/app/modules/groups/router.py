@@ -1,10 +1,15 @@
 from fastapi import APIRouter, Depends
 
+from app.core.dependencies import require_roles
 from app.dependencies import get_group_service
 from app.schemas.group import GroupCreate, GroupMemberAdd
 from app.services.group_service import GroupService
 
-router = APIRouter(prefix="/groups", tags=["groups"])
+router = APIRouter(
+    prefix="/groups",
+    tags=["groups"],
+    dependencies=[Depends(require_roles("coach", "admin", "director"))],
+)
 
 
 @router.post("")

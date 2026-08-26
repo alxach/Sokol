@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, Date, ForeignKey, String, Text, Time
+from sqlalchemy import Boolean, Date, ForeignKey, String, Text, Time, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -9,6 +9,9 @@ from app.core.base import Base, TimestampMixin
 
 class Attendance(TimestampMixin, Base):
     __tablename__ = "attendance"
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "schedule_id", "date", name="uq_attendance_per_class"),
+    )
 
     athlete_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("athletes.id"), nullable=False,

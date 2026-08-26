@@ -1,10 +1,15 @@
 from fastapi import APIRouter, Depends
 
+from app.core.dependencies import require_roles
 from app.dependencies import get_schedule_service
 from app.schemas.schedule import ScheduleCreate
 from app.services.schedule_service import ScheduleService
 
-router = APIRouter(prefix="/schedules", tags=["schedules"])
+router = APIRouter(
+    prefix="/schedules",
+    tags=["schedules"],
+    dependencies=[Depends(require_roles("coach", "admin", "director"))],
+)
 
 
 @router.post("")

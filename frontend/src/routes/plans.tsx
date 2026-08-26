@@ -1,8 +1,8 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { Link, Outlet, createFileRoute, useRouterState } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
-import { Plus, Search, CheckCircle, XCircle, Send, Eye, CalendarDays, LayoutList, Trash2, CalendarIcon } from "lucide-react";
+import { Plus, Search, CheckCircle, XCircle, Send, Eye, CalendarDays, LayoutList, Trash2, CalendarIcon, X, ChevronDown, ChevronUp, FileDown, Upload, FileUp, AlertTriangle } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
@@ -13,7 +13,25 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { CategoryReference } from "@/components/category-reference";
+import { exportToExcel, importPlanFromExcel } from "@/lib/api/exports.functions";
 import { plans, planCategories, planCategoryKeys, type Plan, type PlanItem, type PlanStatus, type PlanCategoryId } from "@/lib/mock-data";
+import { validateMinParticipants, type PlanItem as VPlanItem } from "@/lib/api/incentive-validation";
+
+function downloadBase64(base64: string, filename: string) {
+  const byteChars = atob(base64);
+  const byteNums = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
+  const byteArr = new Uint8Array(byteNums);
+  const blob = new Blob([byteArr], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export const Route = createFileRoute("/plans")({
   head: () => ({
@@ -129,6 +147,27 @@ function PlansPage() {
               <p className="text-sm text-muted-foreground">
                 {accessible.filter((p) => planAggregateStatus(p.items) === "submitted").length} ожидают проверки · {accessible.filter((p) => planAggregateStatus(p.items) === "approved").length} утверждено
               </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <ImportButton plans={accessible} onImported={rerender} />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={filtered.length === 0}
+                onClick={async () => {
+                  const result = await exportToExcel({
+                    data: { type: "plans", data: filtered.map((p) => ({
+                      coachName: p.coachName,
+                      discipline: p.discipline,
+                      periodLabel: p.periodLabel,
+                      items: p.items,
+                    }))},
+                  });
+                  downloadBase64(result.base64, result.filename);
+                }}
+              >
+                <FileDown className="mr-1.5 h-4 w-4" /> Скачать всё (XLSX)
+              </Button>
             </div>
           </div>
 
@@ -261,12 +300,23 @@ function PlansPage() {
   );
 }
 
+const currentQuarter = Math.floor((new Date().getMonth() + 3) / 3);
+
 function CoachPlanView({ plan }: { plan: Plan }) {
   const [, forceUpdate] = useState(0);
   const rerender = () => forceUpdate((n) => n + 1);
   const [showForm, setShowForm] = useState(false);
   const [quarterFilter, setQuarterFilter] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("Все");
+  const [expandedQuarters, setExpandedQuarters] = useState<Set<number>>(new Set([currentQuarter]));
+
+  const toggleQuarter = (q: number) => {
+    setExpandedQuarters((prev) => {
+      const next = new Set(prev);
+      if (next.has(q)) next.delete(q); else next.add(q);
+      return next;
+    });
+  };
 
   const submitItem = (item: PlanItem) => {
     item.status = "submitted";
@@ -330,9 +380,29 @@ function CoachPlanView({ plan }: { plan: Plan }) {
             {plan.coachName} · {plan.discipline} · {plan.periodLabel}
           </p>
         </div>
-        <Badge variant="outline" className={`font-normal ${aggCfg.style}`}>
-          {aggCfg.label}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <ImportButton plans={[plan]} onImported={rerender} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              const result = await exportToExcel({
+                data: { type: "plans", data: [{
+                  coachName: plan.coachName,
+                  discipline: plan.discipline,
+                  periodLabel: plan.periodLabel,
+                  items: plan.items,
+                }]},
+              });
+              downloadBase64(result.base64, result.filename);
+            }}
+          >
+            <FileDown className="mr-1.5 h-4 w-4" /> Скачать Excel
+          </Button>
+          <Badge variant="outline" className={`font-normal ${aggCfg.style}`}>
+            {aggCfg.label}
+          </Badge>
+        </div>
       </div>
 
       <div className="mb-6 flex flex-wrap items-center gap-3 border-b border-border pb-4">
@@ -372,94 +442,7 @@ function CoachPlanView({ plan }: { plan: Plan }) {
         </div>
       </div>
 
-      <div className="space-y-8">
-        {groupedByQuarter
-          .filter((q) => !quarterFilter || q.quarter === quarterFilter)
-          .map(({ quarter, months }) => {
-            const filteredMonths = months
-              .map((m) => ({
-                ...m,
-                items: statusFilter === "Все" ? m.items : m.items.filter((i) => i.status === statusFilter),
-              }))
-              .filter((m) => m.items.length > 0);
-            if (filteredMonths.length === 0) return null;
-            return <div key={quarter}>
-            <h4 className="mb-4 flex items-center gap-2 font-display text-base font-bold text-secondary">
-              <LayoutList className="h-4 w-4 text-primary" />
-              {quarterName[quarter]}
-            </h4>
-            <div className="space-y-6">
-              {filteredMonths.map(({ month, items }) => (
-                <div key={month}>
-                  <h5 className="mb-3 flex items-center gap-2 font-display text-sm font-bold text-secondary/80">
-                    <CalendarDays className="h-3.5 w-3.5 text-primary/60" />
-                    {month}
-                  </h5>
-                  <div className="space-y-3">
-                    {items.map((item) => {
-                      const cat = planCategories[item.categoryId];
-                      const cfg = statusConfig[item.status];
-                      return (
-                        <Card key={item.id} className={`border p-4 shadow-none ${item.status === "rejected" ? "border-destructive/30" : "border-border"}`}>
-                          <div className="mb-2 flex items-start justify-between gap-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant="outline" className="shrink-0 border-primary/30 bg-primary/5 font-normal text-primary text-[10px]">
-                                {cat.shortLabel}
-                              </Badge>
-                              <Badge variant="outline" className={`font-normal ${cfg.style}`}>
-                                {cfg.label}
-                              </Badge>
-                            </div>
-                            <span className="shrink-0 text-xs text-muted-foreground">{item.date}</span>
-                          </div>
-                          <p className="mb-1 font-medium text-secondary text-sm">{item.name}</p>
-                          <p className="mb-2 text-xs text-muted-foreground leading-relaxed">{item.description}</p>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                            <span><span className="font-medium text-foreground">Место:</span> {item.location}</span>
-                            <span><span className="font-medium text-foreground">Участники:</span> {item.participantsCategory}</span>
-                            <span><span className="font-medium text-foreground">Кол-во:</span> {item.participantsCount}</span>
-                          </div>
-
-                          {item.reviewerComment && (
-                            <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
-                              <p className="text-xs font-semibold text-destructive">Комментарий:</p>
-                              <p className="mt-0.5 text-sm text-foreground">{item.reviewerComment}</p>
-                            </div>
-                          )}
-
-                          <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
-                            {item.status === "draft" && (
-                              <>
-                                <Button size="sm" className="h-8 bg-primary text-xs text-primary-foreground hover:bg-primary/90" onClick={() => submitItem(item)}>
-                                  <Send className="mr-1 h-3 w-3" /> Отправить на проверку
-                                </Button>
-                                <Button size="sm" variant="ghost" className="h-8 text-destructive hover:bg-destructive/10" onClick={() => removeItem(item)}>
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </>
-                            )}
-                            {item.status === "submitted" && (
-                              <span className="text-xs text-muted-foreground">Отправлено на проверку</span>
-                            )}
-                            {item.status === "approved" && (
-                              <span className="text-xs text-muted-foreground">{item.reviewedAt ? `Утверждено ${item.reviewedAt}` : "Утверждено"}</span>
-                            )}
-                            {item.status === "rejected" && (
-                              <span className="text-xs text-muted-foreground">{item.reviewedAt ? `Отклонено ${item.reviewedAt}` : "Отклонено"}</span>
-                            )}
-                          </div>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        })}
-      </div>
-
-      <div className="mt-4 flex items-center gap-3">
+      <div className="mb-6 flex items-center gap-3">
         {showForm ? (
           <InlineItemForm
             planYear={plan.year}
@@ -471,6 +454,108 @@ function CoachPlanView({ plan }: { plan: Plan }) {
             <Plus className="mr-1.5 h-4 w-4" /> Добавить мероприятие
           </Button>
         )}
+      </div>
+
+            <div className="space-y-8">
+        {groupedByQuarter
+          .filter((q) => !quarterFilter || q.quarter === quarterFilter)
+          .map(({ quarter, months }) => {
+            const filteredMonths = months
+              .map((m) => ({
+                ...m,
+                items: statusFilter === "Все" ? m.items : m.items.filter((i) => i.status === statusFilter),
+              }))
+              .filter((m) => m.items.length > 0);
+            if (filteredMonths.length === 0) return null;
+            const isExpanded = expandedQuarters.has(quarter);
+            return (
+              <Collapsible key={quarter} open={isExpanded} onOpenChange={() => toggleQuarter(quarter)}>
+                <CollapsibleTrigger asChild>
+                  <button type="button" className="flex w-full items-center gap-2 font-display text-base font-bold text-secondary transition hover:text-primary">
+                    <LayoutList className="h-4 w-4 text-primary" />
+                    {quarterName[quarter]}
+                    {isExpanded ? <ChevronUp className="ml-auto h-4 w-4 text-muted-foreground" /> : <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground" />}
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="mt-4 space-y-6">
+                    {filteredMonths.map(({ month, items }) => (
+                      <div key={month}>
+                        <h5 className="mb-3 flex items-center gap-2 font-display text-sm font-bold text-secondary/80">
+                          <CalendarDays className="h-3.5 w-3.5 text-primary/60" />
+                          {month}
+                        </h5>
+                        <div className="space-y-3">
+                          {items.map((item) => {
+                            const cat = planCategories[item.categoryId];
+                            const cfg = statusConfig[item.status];
+                            return (
+                              <Card key={item.id} className={`border p-4 shadow-none ${item.status === "rejected" ? "border-destructive/30" : "border-border"}`}>
+                                <div className="mb-2 flex items-start justify-between gap-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="outline" className="shrink-0 border-primary/30 bg-primary/5 font-normal text-primary text-[10px]">
+                                      {cat.shortLabel}
+                                    </Badge>
+                                    <Badge variant="outline" className={`font-normal ${cfg.style}`}>
+                                      {cfg.label}
+                                    </Badge>
+                                  </div>
+                                  <span className="shrink-0 text-xs text-muted-foreground">{item.date}</span>
+                                </div>
+                                <p className="mb-1 font-medium text-secondary text-sm">{item.name}</p>
+                                <p className="mb-2 text-xs text-muted-foreground leading-relaxed">{item.description}</p>
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                  <span><span className="font-medium text-foreground">Место:</span> {item.location}</span>
+                                  <span><span className="font-medium text-foreground">Участники:</span> {item.participantsCategory}</span>
+                                  <span>
+                                    <span className="font-medium text-foreground">Кол-во:</span> {item.participantsCount}
+                                    {Number(item.participantsCount) <= 3 && (
+                                      <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                        <AlertTriangle className="h-2.5 w-2.5" /> Не учитывается (≤3, п. 3.1.4)
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+
+                                {item.reviewerComment && (
+                                  <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
+                                    <p className="text-xs font-semibold text-destructive">Комментарий:</p>
+                                    <p className="mt-0.5 text-sm text-foreground">{item.reviewerComment}</p>
+                                  </div>
+                                )}
+
+                                <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
+                                  {item.status === "draft" && (
+                                    <>
+                                      <Button size="sm" className="h-8 bg-primary text-xs text-primary-foreground hover:bg-primary/90" onClick={() => submitItem(item)}>
+                                        <Send className="mr-1 h-3 w-3" /> Отправить на проверку
+                                      </Button>
+                                      <Button size="sm" variant="ghost" className="h-8 text-destructive hover:bg-destructive/10" onClick={() => removeItem(item)}>
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </>
+                                  )}
+                                  {item.status === "submitted" && (
+                                    <span className="text-xs text-muted-foreground">Отправлено на проверку</span>
+                                  )}
+                                  {item.status === "approved" && (
+                                    <span className="text-xs text-muted-foreground">{item.reviewedAt ? `Утверждено ${item.reviewedAt}` : "Утверждено"}</span>
+                                  )}
+                                  {item.status === "rejected" && (
+                                    <span className="text-xs text-muted-foreground">{item.reviewedAt ? `Отклонено ${item.reviewedAt}` : "Отклонено"}</span>
+                                  )}
+                                </div>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            );
+          })}
       </div>
 
       <div className="mt-6 border-t border-border pt-6">
@@ -496,11 +581,14 @@ interface PlanItemForm {
 }
 
 function InlineItemForm({ planYear, onSave, onCancel }: { planYear: number; onSave: (data: PlanItemForm) => void; onCancel: () => void }) {
+  const currentMonthIdx = new Date().getMonth();
+  const defaultQtr = currentQuarter;
+  const defaultMonth = monthOptions[currentMonthIdx - (currentMonthIdx % 3)];
   const [data, setData] = useState<PlanItemForm>({
     key: "new",
     categoryId: "3",
-    quarter: 1,
-    month: "Январь",
+    quarter: defaultQtr,
+    month: defaultMonth,
     date: "",
     name: "",
     description: "",
@@ -529,7 +617,7 @@ function InlineItemForm({ planYear, onSave, onCancel }: { planYear: number; onSa
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
-        <div>
+        <div className="lg:col-span-2">
           <label className="mb-1 block text-xs font-medium text-muted-foreground">Категория *</label>
           <select
             value={data.categoryId}
@@ -542,6 +630,9 @@ function InlineItemForm({ planYear, onSave, onCancel }: { planYear: number; onSa
               </option>
             ))}
           </select>
+          <div className="mt-1.5">
+            <CategoryReference categoryId={data.categoryId} />
+          </div>
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-muted-foreground">Квартал *</label>
@@ -693,6 +784,15 @@ const monthToQuarter: Record<string, number> = {
 function PlanDetailModal({ plan, isAdmin, isDirector, onClose }: { plan: Plan; isAdmin: boolean; isDirector: boolean; onClose: () => void }) {
   const [, forceUpdate] = useState(0);
   const rerender = () => forceUpdate((n) => n + 1);
+  const [expandedQuarters, setExpandedQuarters] = useState<Set<number>>(new Set([currentQuarter]));
+
+  const toggleQuarter = (q: number) => {
+    setExpandedQuarters((prev) => {
+      const next = new Set(prev);
+      if (next.has(q)) next.delete(q); else next.add(q);
+      return next;
+    });
+  };
 
   const groupedByQuarter = useMemo(() => {
     const qMap = new Map<number, Map<string, typeof plan.items>>();
@@ -742,104 +842,368 @@ function PlanDetailModal({ plan, isAdmin, isDirector, onClose }: { plan: Plan; i
             <p className="text-sm text-muted-foreground">
               {plan.coachName} · {plan.discipline} · {plan.periodLabel}
             </p>
+            {(() => {
+              const now = new Date();
+              const q = plan.items.length > 0 ? (plan.items[0].quarter ?? 1) : 1;
+              const deadlineMonth = (q - 1) * 3;
+              const deadline = new Date(now.getFullYear(), deadlineMonth, 1);
+              const isOverdue = now > deadline && plan.status === "draft";
+              const daysLeft = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+              if (isOverdue) {
+                return <p className="mt-1 text-xs font-medium text-destructive">⚠ Просрочен (дедлайн: {deadline.toLocaleDateString("ru-RU")})</p>;
+              }
+              if (daysLeft <= 14 && plan.status === "draft") {
+                return <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-400">Осталось {daysLeft} дн. до дедлайна ({deadline.toLocaleDateString("ru-RU")})</p>;
+              }
+              return null;
+            })()}
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const result = await exportToExcel({
+                  data: { type: "plans", data: [{
+                    coachName: plan.coachName,
+                    discipline: plan.discipline,
+                    periodLabel: plan.periodLabel,
+                    items: plan.items,
+                  }]},
+                });
+                downloadBase64(result.base64, result.filename);
+              }}
+            >
+              <FileDown className="mr-1.5 h-4 w-4" /> Excel
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
           </div>
         </div>
 
         {/* Items by quarter → month */}
         <div className="space-y-8 px-6 py-4">
-          {groupedByQuarter.map(({ quarter, months }) => (
-            <div key={quarter}>
-              <h4 className="mb-4 flex items-center gap-2 font-display text-base font-bold text-secondary">
-                <LayoutList className="h-4 w-4 text-primary" />
-                {quarterName[quarter]}
-              </h4>
-              <div className="space-y-6">
-                {months.map(({ month, items }) => (
-                  <div key={month}>
-                    <h5 className="mb-3 flex items-center gap-2 font-display text-sm font-bold text-secondary/80">
-                      <CalendarDays className="h-3.5 w-3.5 text-primary/60" />
-                      {month}
-                    </h5>
-                    <div className="space-y-3">
-                      {items.map((item) => {
-                  const cat = planCategories[item.categoryId];
-                  const cfg = statusConfig[item.status];
-                  return (
-                    <Card key={item.id} className={`border p-4 shadow-none ${item.status === "rejected" ? "border-destructive/30" : "border-border"}`}>
-                      <div className="mb-2 flex items-start justify-between gap-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="outline" className="shrink-0 border-primary/30 bg-primary/5 font-normal text-primary text-[10px]">
-                            {cat.shortLabel}
-                          </Badge>
-                          <Badge variant="outline" className={`font-normal ${cfg.style}`}>
-                            {cfg.label}
-                          </Badge>
-                        </div>
-                        <span className="shrink-0 text-xs text-muted-foreground">{item.date}</span>
-                      </div>
-                      <p className="mb-1 font-medium text-secondary text-sm">{item.name}</p>
-                      <p className="mb-2 text-xs text-muted-foreground leading-relaxed">{item.description}</p>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span><span className="font-medium text-foreground">Место:</span> {item.location}</span>
-                        <span><span className="font-medium text-foreground">Участники:</span> {item.participantsCategory}</span>
-                        <span><span className="font-medium text-foreground">Кол-во:</span> {item.participantsCount}</span>
-                      </div>
+          {groupedByQuarter.map(({ quarter, months }) => {
+            const isExpanded = expandedQuarters.has(quarter);
+            return (
+              <Collapsible key={quarter} open={isExpanded} onOpenChange={() => toggleQuarter(quarter)}>
+                <CollapsibleTrigger asChild>
+                  <button type="button" className="flex w-full items-center gap-2 font-display text-base font-bold text-secondary transition hover:text-primary">
+                    <LayoutList className="h-4 w-4 text-primary" />
+                    {quarterName[quarter]}
+                    {isExpanded ? <ChevronUp className="ml-auto h-4 w-4 text-muted-foreground" /> : <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground" />}
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="mt-4 space-y-6">
+                    {months.map(({ month, items }) => (
+                      <div key={month}>
+                        <h5 className="mb-3 flex items-center gap-2 font-display text-sm font-bold text-secondary/80">
+                          <CalendarDays className="h-3.5 w-3.5 text-primary/60" />
+                          {month}
+                        </h5>
+                        <div className="space-y-3">
+                          {items.map((item) => {
+                            const cat = planCategories[item.categoryId];
+                            const cfg = statusConfig[item.status];
+                            return (
+                              <Card key={item.id} className={`border p-4 shadow-none ${item.status === "rejected" ? "border-destructive/30" : "border-border"}`}>
+                                <div className="mb-2 flex items-start justify-between gap-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="outline" className="shrink-0 border-primary/30 bg-primary/5 font-normal text-primary text-[10px]">
+                                      {cat.shortLabel}
+                                    </Badge>
+                                    <Badge variant="outline" className={`font-normal ${cfg.style}`}>
+                                      {cfg.label}
+                                    </Badge>
+                                  </div>
+                                  <span className="shrink-0 text-xs text-muted-foreground">{item.date}</span>
+                                </div>
+                                <p className="mb-1 font-medium text-secondary text-sm">{item.name}</p>
+                                <p className="mb-2 text-xs text-muted-foreground leading-relaxed">{item.description}</p>
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                  <span><span className="font-medium text-foreground">Место:</span> {item.location}</span>
+                                  <span><span className="font-medium text-foreground">Участники:</span> {item.participantsCategory}</span>
+                                  <span>
+                                    <span className="font-medium text-foreground">Кол-во:</span> {item.participantsCount}
+                                    {Number(item.participantsCount) <= 3 && (
+                                      <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                        <AlertTriangle className="h-2.5 w-2.5" /> Не учитывается (≤3, п. 3.1.4)
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
 
-                      {/* Rejection comment */}
-                      {item.reviewerComment && (
-                        <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
-                          <p className="text-xs font-semibold text-destructive">Комментарий:</p>
-                          <p className="mt-0.5 text-sm text-foreground">{item.reviewerComment}</p>
-                        </div>
-                      )}
+                                {item.reviewerComment && (
+                                  <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
+                                    <p className="text-xs font-semibold text-destructive">Комментарий:</p>
+                                    <p className="mt-0.5 text-sm text-foreground">{item.reviewerComment}</p>
+                                  </div>
+                                )}
 
-                      {/* Actions */}
-                      <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
-                        {/* Coach: submit draft item */}
-                        {!isAdmin && !isDirector && item.status === "draft" && (
-                          <Button size="sm" className="h-8 bg-primary text-xs text-primary-foreground hover:bg-primary/90" onClick={() => submitItem(item)}>
-                            <Send className="mr-1 h-3 w-3" /> Отправить на проверку
-                          </Button>
-                        )}
-                        {/* Admin: approve/reject submitted item */}
-                        {isAdmin && item.status === "submitted" && (
-                          <>
-                            <Button size="sm" variant="outline" className="h-8 border-destructive text-xs text-destructive hover:bg-destructive/10" onClick={() => rejectItem(item)}>
-                              <XCircle className="mr-1 h-3 w-3" /> Отклонить
-                            </Button>
-                            <Button size="sm" className="h-8 bg-[color:var(--success)] text-xs text-white hover:bg-[color:var(--success)]/90" onClick={() => approveItem(item)}>
-                              <CheckCircle className="mr-1 h-3 w-3" /> Утвердить
-                            </Button>
-                          </>
-                        )}
-                        {/* Info for other states */}
-                        {item.status === "submitted" && !isAdmin && (
-                          <span className="text-xs text-muted-foreground">Отправлено на проверку</span>
-                        )}
-                        {item.status === "approved" && (
-                          <span className="text-xs text-muted-foreground">{item.reviewedAt ? `Утверждено ${item.reviewedAt}` : "Утверждено"}</span>
-                        )}
-                        {item.status === "rejected" && (
-                          <span className="text-xs text-muted-foreground">{item.reviewedAt ? `Отклонено ${item.reviewedAt}` : "Отклонено"}</span>
-                        )}
+                                <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
+                                  {!isAdmin && !isDirector && item.status === "draft" && (
+                                    <Button size="sm" className="h-8 bg-primary text-xs text-primary-foreground hover:bg-primary/90" onClick={() => submitItem(item)}>
+                                      <Send className="mr-1 h-3 w-3" /> Отправить на проверку
+                                    </Button>
+                                  )}
+                                  {isAdmin && item.status === "submitted" && (
+                                    <>
+                                      <Button size="sm" variant="outline" className="h-8 border-destructive text-xs text-destructive hover:bg-destructive/10" onClick={() => rejectItem(item)}>
+                                        <XCircle className="mr-1 h-3 w-3" /> Отклонить
+                                      </Button>
+                                      <Button size="sm" className="h-8 bg-[color:var(--success)] text-xs text-white hover:bg-[color:var(--success)]/90" onClick={() => approveItem(item)}>
+                                        <CheckCircle className="mr-1 h-3 w-3" /> Утвердить
+                                      </Button>
+                                    </>
+                                  )}
+                                  {item.status === "submitted" && !isAdmin && (
+                                    <span className="text-xs text-muted-foreground">Отправлено на проверку</span>
+                                  )}
+                                  {item.status === "approved" && (
+                                    <span className="text-xs text-muted-foreground">{item.reviewedAt ? `Утверждено ${item.reviewedAt}` : "Утверждено"}</span>
+                                  )}
+                                  {item.status === "rejected" && (
+                                    <span className="text-xs text-muted-foreground">{item.reviewedAt ? `Отклонено ${item.reviewedAt}` : "Отклонено"}</span>
+                                  )}
+                                </div>
+                              </Card>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </Card>
-                  );
-                })}
-              </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+                    ))}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            );
+          })}
         </div>
 
         {/* Signature */}
         <div className="border-t border-border px-6 py-4 text-sm text-muted-foreground">
           <span className="font-medium text-foreground">Тренер-преподаватель:</span> _______________ / {plan.coachName}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportButton({ plans: scopePlans, onImported }: { plans: Plan[]; onImported: () => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<{
+    coachName: string;
+    discipline: string;
+    items: Array<{
+      categoryId: string;
+      date: string;
+      name: string;
+      description: string;
+      location: string;
+      participantsCategory: string;
+      participantsCount: string;
+      month: string;
+    }>;
+    warnings: string[];
+  } | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const binary = String.fromCharCode(...new Uint8Array(buf));
+      const base64 = btoa(binary);
+      const result = await importPlanFromExcel({ data: { base64 } });
+      if (result.items.length === 0) {
+        alert("Не найдено мероприятий в файле. Проверьте формат.");
+        return;
+      }
+      setPreview(result);
+    } catch {
+      alert("Ошибка при импорте файла. Проверьте, что это корректный XLSX.");
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const confirmImport = () => {
+    if (!preview) return;
+
+    const existingPlan = plans.find(
+      (p) => p.coachName === preview.coachName && p.year === new Date().getFullYear()
+    );
+
+    if (existingPlan) {
+      const maxId = Math.max(
+        ...existingPlan.items.map((i) => parseInt(i.id.replace("PI-", ""))),
+        0
+      );
+      preview.items.forEach((item, idx) => {
+        existingPlan.items.push({
+          id: `PI-${String(maxId + 1 + idx).padStart(3, "0")}`,
+          categoryId: item.categoryId as PlanCategoryId,
+          quarter: monthToQuarter[item.month] ?? 1,
+          month: item.month,
+          date: item.date,
+          name: item.name,
+          description: item.description,
+          location: item.location,
+          participantsCategory: item.participantsCategory,
+          participantsCount: item.participantsCount,
+          status: "draft",
+        });
+      });
+    } else {
+      const newPlan: Plan = {
+        id: `PLN-${String(plans.length + 1).padStart(3, "0")}`,
+        coachId: "",
+        coachName: preview.coachName,
+        coachInitials: preview.coachName
+          .split(" ")
+          .map((s) => s[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase(),
+        discipline: preview.discipline || "Дзюдо",
+        centerId: "",
+        year: new Date().getFullYear(),
+        periodLabel: `${new Date().getFullYear()} год`,
+        items: preview.items.map((item, idx) => ({
+          id: `PI-${String(idx + 1).padStart(3, "0")}`,
+          categoryId: item.categoryId as PlanCategoryId,
+          quarter: monthToQuarter[item.month] ?? 1,
+          month: item.month,
+          date: item.date,
+          name: item.name,
+          description: item.description,
+          location: item.location,
+          participantsCategory: item.participantsCategory,
+          participantsCount: item.participantsCount,
+          status: "draft",
+        })),
+        status: "draft",
+        createdAt: new Date().toLocaleDateString("ru-RU"),
+      };
+      plans.push(newPlan);
+    }
+
+    setPreview(null);
+    onImported();
+  };
+
+  return (
+    <>
+      <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={handleFile} />
+      <Button variant="outline" size="sm" disabled={importing} onClick={() => fileRef.current?.click()}>
+        <Upload className="mr-1.5 h-4 w-4" /> {importing ? "Импорт..." : "Импорт из Excel"}
+      </Button>
+
+      {preview && (
+        <ImportPreviewModal
+          preview={preview}
+          onConfirm={confirmImport}
+          onCancel={() => setPreview(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function ImportPreviewModal({
+  preview,
+  onConfirm,
+  onCancel,
+}: {
+  preview: {
+    coachName: string;
+    discipline: string;
+    items: Array<{
+      categoryId: string;
+      date: string;
+      name: string;
+      description: string;
+      location: string;
+      participantsCategory: string;
+      participantsCount: string;
+      month: string;
+    }>;
+    warnings: string[];
+  };
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const catLabel: Record<string, string> = {
+    "3": "Меропр. с категориями населения",
+    "4": "Соревнования, УТС, мастер-классы",
+    "5": "Развитие спортсменов",
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10 backdrop-blur-sm">
+      <div className="w-full max-w-5xl rounded-2xl border border-border bg-card shadow-xl">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <div>
+            <h3 className="font-display text-lg font-bold text-secondary">Импорт плана мероприятий</h3>
+            <p className="text-sm text-muted-foreground">
+              {preview.coachName} · {preview.discipline} · Найдено {preview.items.length} мероприятий
+            </p>
+          </div>
+        </div>
+
+        {preview.warnings.length > 0 && (
+          <div className="mx-6 mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+            <div className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-destructive">
+              <AlertTriangle className="h-4 w-4" /> Предупреждения ({preview.warnings.length})
+            </div>
+            <ul className="space-y-0.5 text-xs text-destructive/80">
+              {preview.warnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="overflow-x-auto px-6 pt-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                <th className="px-3 py-2 font-medium">Категория</th>
+                <th className="px-3 py-2 font-medium">Месяц</th>
+                <th className="px-3 py-2 font-medium">Дата</th>
+                <th className="px-3 py-2 font-medium">Название</th>
+                <th className="px-3 py-2 font-medium">Место</th>
+                <th className="px-3 py-2 font-medium">Кол-во</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {preview.items.map((item, idx) => (
+                <tr key={idx} className="hover:bg-muted/30">
+                  <td className="px-3 py-2">
+                    <Badge variant="outline" className="border-primary/30 bg-primary/5 font-normal text-primary text-[10px]">
+                      {catLabel[item.categoryId] ?? item.categoryId}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{item.month}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{item.date}</td>
+                  <td className="px-3 py-2 text-xs text-foreground">{item.name}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{item.location}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{item.participantsCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
+          <Button variant="outline" size="sm" onClick={onCancel}>
+            Отмена
+          </Button>
+          <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={onConfirm}>
+            <FileUp className="mr-1.5 h-4 w-4" /> Добавить {preview.items.length} мероприятий
+          </Button>
         </div>
       </div>
     </div>

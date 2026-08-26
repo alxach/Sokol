@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.dependencies import require_roles
 from app.dependencies import get_attendance_service
 from app.schemas.attendance import (
     AttendanceBatch,
@@ -10,7 +11,11 @@ from app.schemas.attendance import (
 )
 from app.services.attendance_service import AttendanceService
 
-router = APIRouter(prefix="/attendance", tags=["attendance"])
+router = APIRouter(
+    prefix="/attendance",
+    tags=["attendance"],
+    dependencies=[Depends(require_roles("coach", "admin", "director"))],
+)
 
 
 @router.post("/mark")

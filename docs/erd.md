@@ -1,6 +1,6 @@
 # ERD — База данных «СОКОЛ»
 
-> Версия 1.0 | PostgreSQL + SQLAlchemy
+> Версия 2.0 | PostgreSQL + SQLAlchemy | Обновлено: 2026-07-15 (ADR-020)
 
 ---
 
@@ -31,6 +31,7 @@ erDiagram
         string description
         boolean is_system
         timestamp created_at
+        timestamp updated_at
     }
 
     permissions {
@@ -40,6 +41,7 @@ erDiagram
         string resource
         string action
         timestamp created_at
+        timestamp updated_at
     }
 
     role_permissions {
@@ -58,13 +60,16 @@ erDiagram
         string name
         string code UK
         timestamp created_at
+        timestamp updated_at
     }
 
     centers {
         uuid id PK
         string name
         uuid region_id FK
-        string address
+        text address
+        string city
+        string center_type
         string phone
         string email
         boolean is_active
@@ -88,6 +93,7 @@ erDiagram
         date rank_assign_date
         string rank_order_number
         string status
+        string enrollment_type
         text notes
         timestamp created_at
         timestamp updated_at
@@ -104,6 +110,7 @@ erDiagram
         boolean is_verified
         uuid verified_by FK
         timestamp created_at
+        timestamp updated_at
     }
 
     athlete_medical {
@@ -117,6 +124,7 @@ erDiagram
         string file_url
         boolean is_approved
         timestamp created_at
+        timestamp updated_at
     }
 
     athlete_ranks_history {
@@ -128,6 +136,7 @@ erDiagram
         string order_number
         string file_url
         timestamp created_at
+        timestamp updated_at
     }
 
     athlete_achievements {
@@ -141,6 +150,7 @@ erDiagram
         string description
         string file_url
         timestamp created_at
+        timestamp updated_at
     }
 
     %% ===== ТРЕНЕРЫ =====
@@ -165,6 +175,25 @@ erDiagram
         date valid_until
         string document_url
         timestamp created_at
+        timestamp updated_at
+    }
+
+    coach_vacations {
+        uuid id PK
+        uuid coach_id FK
+        date start_date
+        date end_date
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    coach_sick_leaves {
+        uuid id PK
+        uuid coach_id FK
+        date start_date
+        date end_date
+        timestamp created_at
+        timestamp updated_at
     }
 
     %% ===== ТРЕНИРОВОЧНЫЙ ПРОЦЕСС =====
@@ -196,7 +225,7 @@ erDiagram
         uuid group_id FK
         uuid center_id FK
         uuid coach_id FK
-        string day_of_week
+        integer day_of_week
         time start_time
         time end_time
         string location
@@ -217,17 +246,19 @@ erDiagram
         string check_in_method
         uuid checked_by FK
         timestamp created_at
+        timestamp updated_at
     }
 
     attendance_qr_codes {
         uuid id PK
         uuid schedule_id FK
-        string qr_code
+        string qr_code UK
         date valid_date
         time valid_from
         time valid_until
         boolean is_active
         timestamp created_at
+        timestamp updated_at
     }
 
     %% ===== СОРЕВНОВАНИЯ =====
@@ -258,6 +289,7 @@ erDiagram
         integer max_participants
         string status
         timestamp created_at
+        timestamp updated_at
     }
 
     participants {
@@ -267,7 +299,8 @@ erDiagram
         string status
         integer seed
         string weight_at_registration
-        timestamp registered_at
+        timestamp created_at
+        timestamp updated_at
     }
 
     results {
@@ -282,6 +315,7 @@ erDiagram
         string medal
         text notes
         timestamp created_at
+        timestamp updated_at
     }
 
     %% ===== ОТЧЕТНОСТЬ =====
@@ -290,7 +324,7 @@ erDiagram
         string name
         string code UK
         string report_type
-        text structure_json
+        jsonb structure_json
         text description
         boolean is_active
         timestamp created_at
@@ -303,14 +337,17 @@ erDiagram
         uuid author_id FK
         uuid center_id FK
         uuid coach_id FK
+        uuid program_id FK
+        integer payout_tier
+        uuid commission_protocol_id FK
         string period_type
         date period_start
         date period_end
-        text data_json
+        jsonb data_json
         string status
         uuid reviewer_id FK
         text review_comment
-        date reviewed_at
+        timestamp reviewed_at
         timestamp created_at
         timestamp updated_at
     }
@@ -322,6 +359,7 @@ erDiagram
         string status
         text comment
         timestamp created_at
+        timestamp updated_at
     }
 
     %% ===== ДОКУМЕНТООБОРОТ =====
@@ -330,16 +368,17 @@ erDiagram
         string name
         string code UK
         string doc_type
-        text template_fields_json
+        jsonb template_fields_json
         boolean is_active
         timestamp created_at
+        timestamp updated_at
     }
 
     documents {
         uuid id PK
         uuid template_id FK
         uuid author_id FK
-        text content_json
+        jsonb content_json
         string status
         string file_url
         timestamp created_at
@@ -354,9 +393,90 @@ erDiagram
         text comment
         integer step_order
         timestamp created_at
+        timestamp updated_at
     }
 
-    %% ===== VK MINI APP =====
+    %% ===== ПРОГРАММА СТИМУЛИРОВАНИЯ (ADR-019) =====
+    incentive_programs {
+        uuid id PK
+        string name
+        string regulation_number UK
+        date regulation_date
+        integer revision
+        integer max_payout
+        integer min_payout
+        numeric ndfl_rate
+        numeric insurance_rate
+        boolean is_discretionary
+        string status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    commission_protocols {
+        uuid id PK
+        string number
+        date date
+        string beneficiary_name
+        string period
+        uuid center_id FK
+        text agenda
+        text decisions
+        integer voting_for
+        integer voting_against
+        integer voting_abstained
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    payout_rows {
+        uuid id PK
+        uuid protocol_id FK
+        uuid coach_id FK
+        uuid report_id FK
+        string sport_type
+        date period_start
+        date period_end
+        numeric gross_amount
+        numeric ndfl_amount
+        numeric insurance_amount
+        numeric net_amount
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    event_plans {
+        uuid id PK
+        uuid coach_id FK
+        uuid center_id FK
+        uuid program_id FK
+        integer year
+        string status
+        uuid reviewer_id FK
+        text review_comment
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    plan_items {
+        uuid id PK
+        uuid plan_id FK
+        string category
+        integer quarter
+        integer month
+        string date
+        string name
+        text description
+        string location
+        string participants_category
+        string participants_count
+        string status
+        text reviewer_comment
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% ===== VK MINI APP (Planned) =====
     vk_users {
         uuid id PK
         uuid user_id FK
@@ -388,11 +508,12 @@ erDiagram
         string action
         string resource
         string resource_id
-        text old_value
-        text new_value
+        jsonb old_value
+        jsonb new_value
         string ip_address
         string user_agent
         timestamp created_at
+        timestamp updated_at
     }
 
     %% ===== СВЯЗИ =====
@@ -430,6 +551,7 @@ erDiagram
     athletes ||--o{ participants : participates
     competitions ||--o{ results : produces
     athletes ||--o{ results : achieves
+
     report_templates ||--o{ reports : defines
     users ||--o{ reports : authors
     centers ||--o{ reports : belongs_to
@@ -443,6 +565,21 @@ erDiagram
     users ||--o{ vk_users : connects
     users ||--o{ vk_notifications : notifies
     users ||--o{ audit_logs : logs
+
+    %% ===== СВЯЗИ: ПРОГРАММА СТИМУЛИРОВАНИЯ =====
+    incentive_programs ||--o{ event_plans : governs
+    incentive_programs ||--o{ reports : links_to
+    centers ||--o{ commission_protocols : hosts
+    centers ||--o{ event_plans : belongs_to
+    commission_protocols ||--o{ payout_rows : contains
+    coaches ||--o{ payout_rows : receives
+    coaches ||--o{ event_plans : owns
+    reports ||--o{ payout_rows : referenced_by
+    reports ||--o{ commission_protocols : linked_to
+    event_plans ||--o{ plan_items : includes
+    users ||--o{ event_plans : reviews
+    coaches ||--o{ coach_vacations : has
+    coaches ||--o{ coach_sick_leaves : has
 ```
 
 ---
@@ -464,12 +601,13 @@ erDiagram
 | Таблица | Назначение | Ключевые поля |
 |---------|-----------|---------------|
 | `regions` | Регионы/области | name, code |
-| `centers` | Клубы/центры/филиалы | name, region_id, address |
+| `centers` | Клубы/центры/филиалы | name, region_id, address, city, center_type |
+
 ### 2.3 Спортсмены
 
 | Таблица | Назначение | Ключевые поля |
 |---------|-----------|---------------|
-| `athletes` | Основная карточка спортсмена | ФИО, дата рождения, разряд, центр, тренер |
+| `athletes` | Основная карточка спортсмена | ФИО, дата рождения, разряд, центр, тренер, enrollment_type |
 | `athlete_documents` | Документы (медсправки, страховки) | athlete_id, doc_type, срок действия |
 | `athlete_medical` | Медицинские осмотры | athlete_id, тип осмотра, диагноз, срок действия |
 | `athlete_ranks_history` | История присвоения разрядов | athlete_id, rank_before, rank_after, номер приказа |
@@ -481,6 +619,8 @@ erDiagram
 |---------|-----------|---------------|
 | `coaches` | Тренерские карточки | user_id → users, center_id, специализация, квалификация |
 | `coach_categories` | Категории тренеров | coach_id, категория, срок действия |
+| `coach_vacations` | Отпуска тренеров | coach_id, start_date, end_date |
+| `coach_sick_leaves` | Больничные тренеров | coach_id, start_date, end_date |
 
 ### 2.5 Тренировочный процесс
 
@@ -488,7 +628,7 @@ erDiagram
 |---------|-----------|---------------|
 | `groups` | Тренировочные группы | name, coach_id, center_id, возраст, уровень |
 | `group_members` | Состав групп | group_id, athlete_id, дата вступления |
-| `schedules` | Расписание занятий | group_id, день недели, время, место |
+| `schedules` | Расписание занятий | group_id, день недели (1-7), время, место |
 | `attendance` | Посещаемость | athlete_id, schedule_id, дата, статус, причина |
 | `attendance_qr_codes` | QR-коды для отметок | schedule_id, код, срок действия |
 
@@ -506,7 +646,7 @@ erDiagram
 | Таблица | Назначение | Ключевые поля |
 |---------|-----------|---------------|
 | `report_templates` | Шаблоны отчетов | name, code, тип, структура (JSON) |
-| `reports` | Сформированные отчеты | template_id, автор, центр, период, данные (JSON), статус |
+| `reports` | Сформированные отчеты | template_id, автор, центр, период, данные (JSON), статус, program_id, payout_tier, commission_protocol_id |
 | `report_submissions` | История отправок/согласований | report_id, автор, статус, комментарий |
 
 ### 2.8 Документооборот
@@ -517,16 +657,28 @@ erDiagram
 | `documents` | Сгенерированные документы | template_id, автор, содержание (JSON), статус |
 | `document_approvals` | Согласование документов | document_id, согласующий, действие, шаг |
 
-### 2.9 VK Mini App
+### 2.9 Программа материального стимулирования (ADR-019)
+
+| Таблица | Назначение | Ключевые поля |
+|---------|-----------|---------------|
+| `incentive_programs` | Конфигурация программы | regulation_number, revision, max/min_payout, ndfl/insurance_rate, is_discretionary |
+| `commission_protocols` | Протоколы заседаний комиссии | number, date, period, center_id, voting, agenda, decisions |
+| `payout_rows` | Строки выплат тренерам | protocol_id, coach_id, report_id, gross/ndfl/insurance/net_amount |
+| `event_plans` | Годовые планы мероприятий тренеров | coach_id, center_id, year, status |
+| `plan_items` | Элементы плана (по месяцам) | plan_id, category (3/4/5), month, name, participants |
+
+### 2.10 VK Mini App (Planned)
+
 | Таблица | Назначение | Ключевые поля |
 |---------|-----------|---------------|
 | `vk_users` | Привязка VK ID к пользователю | user_id, vk_user_id, vk_access_token |
 | `vk_notifications` | Уведомления | user_id, тип, сообщение, статус |
 
-### 2.10 Аудит
+### 2.11 Аудит
+
 | Таблица | Назначение | Ключевые поля |
 |---------|-----------|---------------|
-| `audit_logs` | Лог действий пользователей | user_id, action, resource, old_value, new_value, IP |
+| `audit_logs` | Лог действий пользователей | user_id, action, resource, old_value (JSONB), new_value (JSONB), IP |
 
 ---
 
@@ -536,12 +688,14 @@ erDiagram
 |-----|-----------|
 | `uuid` | Все первичные ключи (PK) |
 | `string (varchar)` | Названия, коды, ФИО |
-| `text` | Длинные описания, JSON-структуры |
+| `text` | Длинные описания |
+| `jsonb` | JSON-структуры (data_json, content_json, old_value, new_value) |
+| `numeric` | Денежные суммы (gross_amount, ndfl_amount и др.) |
 | `timestamp` | created_at, updated_at, deleted_at |
 | `date` | Дата рождения, даты событий |
 | `time` | Время занятий |
 | `boolean` | Флаги (is_active, is_verified) |
-| `integer` | vk_user_id |
+| `integer` | Числовые поля (day_of_week,投票ы, max_capacity) |
 
 ### Naming conventions
 
@@ -551,7 +705,7 @@ erDiagram
 - **FK**: `{table}_id` (`user_id`, `athlete_id`)
 - **Soft delete**: `deleted_at` (timestamp, nullable)
 - **Timestamps**: `created_at`, `updated_at`
-- **Статусы**: `string ENUM` через constraint
+- **Статусы**: `string` через CHECK/UNIQUE constraint
 
 ---
 
@@ -563,12 +717,30 @@ erDiagram
 | `users` | last_name, first_name | Поиск по ФИО |
 | `athletes` | center_id, coach_id | Фильтрация по центру/тренеру |
 | `athletes` | last_name, first_name, birth_date | Поиск дубликатов |
+| `attendance` | athlete_id, schedule_id, date (UNIQUE) | Одна отметка на занятие |
 | `attendance` | athlete_id, date | Журнал посещаемости |
 | `attendance` | schedule_id, date | Отметка по расписанию |
 | `reports` | author_id, period_start, period_end | История отчетов |
 | `reports` | center_id, status | Фильтрация по центру/статусу |
 | `audit_logs` | user_id, created_at | Аудит действий |
 | `schedules` | group_id, day_of_week | Расписание групп |
+| `participants` | competition_id, athlete_id (UNIQUE) | Один спортсмен на соревнование |
+| `results` | competition_id, athlete_id, stage (UNIQUE) | Один результат на этап |
+| `coaches` | user_id (UNIQUE) | Привязка к учётке |
+| `commission_protocols` | center_id | Фильтрация по центру |
+| `event_plans` | coach_id, year | Планы тренера по годам |
+| `event_plans` | center_id | Фильтрация по центру |
+| `plan_items` | plan_id | Состав плана |
+| `payout_rows` | protocol_id | Выплаты протокола |
+| `payout_rows` | coach_id | Выплаты тренера |
+
+### 4.1 CHECK-ограничения
+
+| Таблица | Ограничение | Описание |
+|---------|-------------|----------|
+| `schedules` | `ck_schedules_day_of_week` | `day_of_week BETWEEN 1 AND 7` |
+| `schedules` | `ck_schedules_time_range` | `start_time < end_time` |
+| `events` | `ck_events_date_range` | `start_date <= end_date` |
 
 ---
 
@@ -578,12 +750,25 @@ erDiagram
 Центр (centers) ──has──> Группы (groups)
 Центр (centers) ──has──> Спортсмены (athletes)
 Центр (centers) ──has──> Тренеры (coaches)
+Центр (centers) ──hosts──> Протоколы комиссии (commission_protocols)
+Центр (centers) ──belongs_to──> Планы мероприятий (event_plans)
 Тренер (coaches) ──leads──> Группы (groups)
 Тренер (coaches) ──coaches──> Спортсмены (athletes)
+Тренер (coaches) ──owns──> Планы мероприятий (event_plans)
+Тренер (coaches) ──receives──> Строки выплат (payout_rows)
+Тренер (coaches) ──has──> Отпуска (coach_vacations)
+Тренер (coaches) ──has──> Больничные (coach_sick_leaves)
 Группа (groups) ──includes──> Спортсмены (athletes)  [через group_members]
 Группа (groups) ──has──> Расписание (schedules)
 Расписание (schedules) ──tracks──> Посещаемость (attendance)
 Пользователь (users) ──is──> Тренер (coaches)
 Пользователь (users) ──authors──> Отчеты (reports)
+Пользователь (users) ──reviews──> Планы (event_plans)
 Пользователь (users) ──authors──> Документы (documents)
+Программа (incentive_programs) ──governs──> Планы (event_plans)
+Программа (incentive_programs) ──links_to──> Отчеты (reports)
+Протокол (commission_protocols) ──contains──> Выплаты (payout_rows)
+Отчет (reports) ──referenced_by──> Выплаты (payout_rows)
+Отчет (reports) ──linked_to──> Протокол (commission_protocols)
+План (event_plans) ──includes──> Элементы (plan_items)
 ```

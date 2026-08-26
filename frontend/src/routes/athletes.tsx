@@ -26,6 +26,7 @@ import {
   type Group,
 } from "@/lib/mock-data";
 import { exportToExcel, importAthletesFromExcel } from "@/lib/api/exports.functions";
+import { MiniStat } from "@/components/mini-stat";
 import { AthleteModal, disciplines } from "@/components/athlete-modal";
 
 function downloadBase64(base64: string, filename: string) {
@@ -291,7 +292,7 @@ function AthletesPage() {
                     <div className="flex items-center justify-center gap-1.5 text-xs font-semibold">
                       <span className="rounded bg-accent/20 px-1.5 py-0.5 text-secondary">{a.medals.gold}</span>
                       <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{a.medals.silver}</span>
-                      <span className="rounded bg-[oklch(0.65_0.12_50)]/15 px-1.5 py-0.5 text-[oklch(0.5_0.12_50)]">{a.medals.bronze}</span>
+                          <span className="rounded bg-accent/15 px-1.5 py-0.5 text-accent">{a.medals.bronze}</span>
                     </div>
                   </TableCell>
                   <TableCell className="text-right font-display font-bold text-primary">
@@ -531,7 +532,7 @@ function AthleteDetailModal({ athlete, onClose }: { athlete: Athlete; onClose: (
                   <div className="text-2xl font-bold text-secondary">{athlete.medals.silver}</div>
                   <div className="text-xs text-muted-foreground">Серебро</div>
                 </div>
-                <div className="rounded-lg bg-[oklch(0.65_0.12_50)]/10 p-4 text-center">
+                <div className="rounded-lg bg-accent/10 p-4 text-center">
                   <div className="text-2xl font-bold text-secondary">{athlete.medals.bronze}</div>
                   <div className="text-xs text-muted-foreground">Бронза</div>
                 </div>
@@ -592,30 +593,4 @@ function AthleteDetailModal({ athlete, onClose }: { athlete: Athlete; onClose: (
   );
 }
 
-function MiniStat({
-  label,
-  value,
-  accent,
-  icon,
-}: {
-  label: string;
-  value: string;
-  accent: "primary" | "secondary" | "accent" | "success";
-  icon?: React.ReactNode;
-}) {
-  const tone: Record<typeof accent, string> = {
-    primary: "border-l-primary",
-    secondary: "border-l-secondary",
-    accent: "border-l-accent",
-    success: "border-l-[color:var(--success)]",
-  };
-  return (
-    <Card className={`flex items-center justify-between border-l-4 p-5 shadow-[var(--shadow-card)] ${tone[accent]}`}>
-      <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
-        <div className="mt-1 font-display text-2xl font-bold text-secondary">{value}</div>
-      </div>
-      {icon && <div className="text-accent">{icon}</div>}
-    </Card>
-  );
-}
+

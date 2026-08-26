@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Date, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, Date, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -9,6 +9,9 @@ from app.core.base import Base, TimestampMixin
 
 class Event(TimestampMixin, Base):
     __tablename__ = "events"
+    __table_args__ = (
+        CheckConstraint("start_date <= end_date", name="ck_events_date_range"),
+    )
 
     name: Mapped[str] = mapped_column(String(300), nullable=False)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -55,6 +58,9 @@ class Competition(TimestampMixin, Base):
 
 class Participant(TimestampMixin, Base):
     __tablename__ = "participants"
+    __table_args__ = (
+        UniqueConstraint("competition_id", "athlete_id", name="uq_participant_per_competition"),
+    )
 
     competition_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False,
@@ -71,6 +77,9 @@ class Participant(TimestampMixin, Base):
 
 class Result(TimestampMixin, Base):
     __tablename__ = "results"
+    __table_args__ = (
+        UniqueConstraint("competition_id", "athlete_id", "stage", name="uq_result_per_competition_stage"),
+    )
 
     competition_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False,

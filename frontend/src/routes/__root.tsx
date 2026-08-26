@@ -13,6 +13,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AuthProvider } from "../lib/auth";
 import { CenterProvider } from "../lib/center";
+import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -111,6 +112,7 @@ function RootComponent() {
       <AuthProvider>
         <CenterProvider>
           <Outlet />
+          <Toaster />
         </CenterProvider>
       </AuthProvider>
     </QueryClientProvider>

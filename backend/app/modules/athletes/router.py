@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 
+from app.core.dependencies import require_roles
 from app.dependencies import get_athlete_service
 from app.schemas.athlete import (
     AthleteAchievementCreate,
@@ -11,7 +12,11 @@ from app.schemas.athlete import (
 )
 from app.services.athlete_service import AthleteService
 
-router = APIRouter(prefix="/athletes", tags=["athletes"])
+router = APIRouter(
+    prefix="/athletes",
+    tags=["athletes"],
+    dependencies=[Depends(require_roles("coach", "admin", "director"))],
+)
 
 
 @router.post("")
