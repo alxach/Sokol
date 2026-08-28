@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { type LucideIcon } from "lucide-react";
 import {
   LayoutDashboard,
   Users,
@@ -10,6 +11,8 @@ import {
   ClipboardList,
   CalendarCheck,
   Calendar,
+  Building2,
+  HandCoins,
 } from "lucide-react";
 import {
   Sidebar,
@@ -26,18 +29,25 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useCenter } from "@/lib/center";
 
+interface NavItem {
+  title: string;
+  url: string;
+  icon: LucideIcon;
+  disabled?: boolean;
+}
+
 export function AppSidebar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const isActive = (url: string) => pathname === url;
-  const { isAdmin, isCoach, isDirector } = useAuth();
+  const { isAdmin, isCoach, isDirector, isSuperadmin } = useAuth();
   const { selectedCenterId, setSelectedCenterId, centers: centerList } = useCenter();
 
-  const primary = [
+  const primary: NavItem[] = [
     { title: "Дашборд", url: "/", icon: LayoutDashboard },
     { title: "Спортсмены", url: "/athletes", icon: Users },
   ];
 
-  const adminModules = [
+  const adminModules: NavItem[] = [
     { title: "Тренеры", url: "/coaches", icon: UserCog },
     { title: "Расписание", url: "/schedules", icon: Calendar },
     { title: "Соревнования", url: "/competitions", icon: Trophy },
@@ -45,22 +55,30 @@ export function AppSidebar() {
     { title: "Отчёты", url: "/reports", icon: FileText },
     { title: "Посещаемость", url: "/attendance", icon: ClipboardList },
     { title: "Комиссия", url: "/commission", icon: FileText },
+    { title: "Программы", url: "/admin/programs", icon: HandCoins },
     { title: "Документы", url: "/documents", icon: FileText, disabled: true },
     { title: "Аналитика", url: "/analytics", icon: BarChart3 },
   ];
 
-  const coachModules = [
+  const coachModules: NavItem[] = [
     { title: "Расписание", url: "/schedules", icon: Calendar },
     { title: "Соревнования", url: "/competitions", icon: Trophy },
     { title: "Мои группы", url: "/groups", icon: ClipboardList },
     { title: "План мероприятий", url: "/plans", icon: CalendarCheck },
     { title: "Отчёты", url: "/reports", icon: FileText },
     { title: "Посещаемость", url: "/attendance", icon: ClipboardList },
-    { title: "Комиссия", url: "/commission", icon: FileText },
     { title: "Профиль", url: "/profile", icon: UserCog },
   ];
 
-  const secondary = isAdmin || isDirector ? adminModules : coachModules;
+  const showAdminModules = isAdmin || isDirector || isSuperadmin;
+  const secondary = showAdminModules ? adminModules : coachModules;
+
+  const adminGroup: NavItem[] = isSuperadmin ? [
+    { title: "Пользователи", url: "/admin/users", icon: Users },
+    { title: "Оргструктура", url: "/admin/org", icon: Building2 },
+    { title: "Программы", url: "/admin/programs", icon: HandCoins },
+    { title: "Аудит-лог", url: "/admin/audit", icon: ClipboardList },
+  ] : [];
 
   return (
     <Sidebar collapsible="icon">
@@ -95,7 +113,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {isAdmin || isDirector ? (
+        {showAdminModules ? (
         <>
         <SidebarGroup>
           <SidebarGroupContent>
@@ -141,6 +159,26 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {adminGroup.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Администрирование</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminGroup.map((item) => (
+                  <SidebarMenuItem key={item.url}>
+                    <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+                      <Link to={item.url}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
         </>
         ) : (
         <SidebarGroup>

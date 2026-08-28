@@ -6,6 +6,11 @@ class RegionCreate(BaseModel):
     code: str
 
 
+class RegionUpdate(BaseModel):
+    name: str | None = None
+    code: str | None = None
+
+
 class RegionResponse(BaseModel):
     id: str
     name: str
@@ -20,6 +25,17 @@ class CenterCreate(BaseModel):
     center_type: str = "cse"
     phone: str | None = None
     email: str | None = None
+
+
+class CenterUpdate(BaseModel):
+    name: str | None = None
+    region_id: str | None = None
+    address: str | None = None
+    city: str | None = None
+    center_type: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    is_active: bool | None = None
 
 
 class CenterResponse(BaseModel):

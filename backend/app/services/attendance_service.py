@@ -21,13 +21,17 @@ class AttendanceService:
         for record in data.records:
             r = await self.repo.create(
                 group_id=data.group_id, schedule_id=data.schedule_id,
-                date=data.date, **record.model_dump(),
+                date=data.date, **record.model_dump(exclude={"schedule_id", "date"}),
             )
             results.append(r)
         return results
 
-    async def list_by_date(self, date_str: str, group_id: str | None = None):
-        filters = {"date": date_str}
+    async def list_by_date(self, date_value: str | date, group_id: str | None = None):
+        filters: dict = {}
+        if isinstance(date_value, str):
+            filters["date"] = date.fromisoformat(date_value)
+        else:
+            filters["date"] = date_value
         if group_id:
             filters["group_id"] = group_id
         items, total = await self.repo.list(**filters)

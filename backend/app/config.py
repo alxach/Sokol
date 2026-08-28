@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # CORS
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000,http://localhost:8080"
 
     @model_validator(mode="after")
     def validate_jwt_secret(self) -> "Settings":

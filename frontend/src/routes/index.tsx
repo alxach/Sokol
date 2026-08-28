@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -23,6 +23,7 @@ import {
   Clock,
   ClipboardList,
   Dumbbell,
+  AlertTriangle,
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
@@ -31,12 +32,15 @@ import { useAuthGuard, useAuth } from "@/lib/auth";
 import { useCenter } from "@/lib/center";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { fetchPlans } from "@/lib/api/plans.functions";
+import { monthName } from "@/lib/api/plans.functions";
+import { fetchCriteria, type IncentiveCriteriaPayload } from "@/lib/api/criteria.functions";
+import { planAggregateStatus, planDeadlineInfo, statusConfig } from "@/routes/plans";
 import {
   athletes,
   schedules,
   schedulePeriods,
   attendanceRecords,
-  plans,
   disciplineMix,
   monthlyResults,
   recentActivity,
@@ -45,6 +49,7 @@ import {
   getCenterIdByCity,
   getPeriodStatus,
   getGroupName,
+  type Plan,
 } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/")({
@@ -73,10 +78,54 @@ const toneStyles: Record<string, string> = {
 
 function Dashboard() {
   const { loading } = useAuthGuard();
-  const { isDirector, isCoach, user } = useAuth();
+  const { isDirector, isCoach, isAdmin, user } = useAuth();
   const { selectedCenterId } = useCenter();
 
   const coachName = user?.coachName;
+
+  const [myPlan, setMyPlan] = useState<Plan | null>(null);
+  const [allPlans, setAllPlans] = useState<Plan[]>([]);
+  const [plansError, setPlansError] = useState("");
+  const [criteria, setCriteria] = useState<IncentiveCriteriaPayload | null>(null);
+  const [criteriaError, setCriteriaError] = useState("");
+
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchCriteria();
+        if (cancelled) return;
+        setCriteria(list[0] ?? null);
+        setCriteriaError("");
+      } catch {
+        if (!cancelled) setCriteriaError("Не удалось загрузить критерии.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading]);
+
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchPlans();
+        if (cancelled) return;
+        setAllPlans(list);
+        setPlansError("");
+        const mine = list.find((p) => p.coachId === user?.id && p.year === new Date().getFullYear()) ?? null;
+        setMyPlan(mine);
+      } catch {
+        if (!cancelled) setPlansError("Не удалось загрузить планы мероприятий.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, user?.id]);
 
   const topAthletes = [...athletes].sort((a, b) => b.rating - a.rating).slice(0, 5);
 
@@ -108,10 +157,6 @@ function Dashboard() {
     const present = myAttendance.filter((r) => r.status === "present").length;
     return Math.round((present / myAttendance.length) * 100);
   }, [myAttendance]);
-  const myPlans = useMemo(
-    () => plans.filter((p) => p.coachName === coachName).sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1)),
-    [coachName],
-  );
   const totalMedals = useMemo(() => {
     return myAthletes.reduce((s, a) => s + a.medals.gold + a.medals.silver + a.medals.bronze, 0);
   }, [myAthletes]);
@@ -147,6 +192,54 @@ function Dashboard() {
     const uniqueCities = [...new Set(centerCities)];
     return recentActivity;
   }, [selectedCenterId]);
+
+  const myPlanSummary = useMemo(() => {
+    if (!myPlan || myPlan.items.length === 0) return null;
+    const qCounts = [1, 2, 3, 4]
+      .map((quarter) => ({ quarter, count: myPlan.items.filter((i) => i.quarter === quarter).length }))
+      .filter((x) => x.count > 0);
+    return {
+      plan: myPlan,
+      qCounts,
+      agg: planAggregateStatus(myPlan.items),
+      deadline: planDeadlineInfo(myPlan, new Date()),
+    };
+  }, [myPlan]);
+
+  const criteriaMetrics = useMemo(() => {
+    if (!isCoach) return null;
+    const mName = monthName(new Date().getMonth() + 1);
+    const monthItems = (myPlan?.items ?? []).filter(
+      (i) => i.month === mName && (i.status === "approved" || i.status === "submitted"),
+    );
+    const countBy = (cat: string) => monthItems.filter((i) => i.categoryId === cat).length;
+    return {
+      athletes: myAthletes.filter((a) => a.age <= 21).length,
+      hours: 0,
+      socialEvents: countBy("3"),
+      sportEvents: countBy("4"),
+      developmentEvents: countBy("5"),
+    };
+  }, [isCoach, myPlan, myAthletes]);
+
+  const planDeadlines = useMemo(() => {
+    if (isCoach) return [];
+    const now = new Date();
+    const list = allPlans
+      .map((p) => {
+        if (isAdmin && user?.centerId && p.centerId !== user.centerId) return null;
+        return { plan: p, info: planDeadlineInfo(p, now) };
+      })
+      .filter((x): x is { plan: Plan; info: NonNullable<ReturnType<typeof planDeadlineInfo>> } =>
+        x !== null && x.info !== null,
+      );
+    list.sort((a, b) =>
+      a.info.tone === b.info.tone
+        ? a.info.text.localeCompare(b.info.text)
+        : a.info.tone === "overdue" ? -1 : 1,
+    );
+    return list;
+  }, [allPlans, isCoach, isAdmin, user?.centerId]);
 
   if (loading) {
     return (
@@ -313,40 +406,51 @@ function Dashboard() {
         <section className="mb-6">
           <h3 className="mb-3 font-display text-sm font-bold text-secondary">Критерии материального стимулирования</h3>
           <Card className="border border-border p-4 shadow-none">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-              {[
-                { label: "Спортсмены (до 21 года)", current: myAthletes.length, full: 30, basic: 15, unit: "чел." },
-                { label: "Часы тренировок", current: 8, full: 9, basic: 4.5, unit: "ч/нед" },
-                { label: "Мероприятия с особыми категориями", current: 1, full: 1, basic: 1, unit: "меропр./мес" },
-                { label: "Спортивные мероприятия", current: 1, full: 1, basic: 1, unit: "меропр./мес" },
-                { label: "Мероприятия развития спортсменов", current: 1, full: 1, basic: 1, unit: "меропр./мес" },
-              ].map((c) => {
-                const pct = Math.min((c.current / c.full) * 100, 100);
-                const meetsFull = c.current >= c.full;
-                const meetsBasic = c.current >= c.basic;
-                return (
-                  <div key={c.label} className="space-y-1.5">
-                    <div className="text-xs font-medium text-secondary">{c.label}</div>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="font-display text-lg font-bold text-secondary">{c.current}</span>
-                      <span className="text-xs text-muted-foreground">/ {c.full} {c.unit}</span>
+            {!criteria ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                {criteriaError
+                  ? criteriaError
+                  : "Критерии ещё не утверждены руководителем центра. Нормы появятся здесь после утверждения."}
+              </div>
+            ) : (
+              <>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                {[
+                  { label: "Спортсмены (до 21 года)", current: criteriaMetrics?.athletes ?? 0, full: criteria.athletes_full, basic: criteria.athletes_basic, unit: "чел." },
+                  { label: "Часы тренировок", current: 0, full: criteria.hours_full, basic: criteria.hours_basic, unit: "ч/нед", note: "по расписанию" },
+                  { label: "Мероприятия с особыми категориями", current: criteriaMetrics?.socialEvents ?? 0, full: criteria.social_events_full, basic: criteria.social_events_basic, unit: "меропр./мес" },
+                  { label: "Спортивные мероприятия", current: criteriaMetrics?.sportEvents ?? 0, full: criteria.sports_events_full, basic: criteria.sports_events_basic, unit: "меропр./мес" },
+                  { label: "Мероприятия развития спортсменов", current: criteriaMetrics?.developmentEvents ?? 0, full: criteria.development_events_full, basic: criteria.development_events_basic, unit: "меропр./мес" },
+                ].map((c) => {
+                  const pct = c.full > 0 ? Math.min((c.current / c.full) * 100, 100) : 0;
+                  const meetsFull = c.full > 0 && c.current >= c.full;
+                  const meetsBasic = c.basic > 0 && c.current >= c.basic;
+                  return (
+                    <div key={c.label} className="space-y-1.5">
+                      <div className="text-xs font-medium text-secondary">{c.label}</div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="font-display text-lg font-bold text-secondary">{c.current}</span>
+                        <span className="text-xs text-muted-foreground">/ {c.full} {c.unit}</span>
+                      </div>
+                      {c.note && <div className="text-[10px] text-muted-foreground">{c.note}</div>}
+                      <div className="h-1.5 w-full rounded-full bg-muted/40">
+                        <div
+                          className={`h-full rounded-full transition-all ${meetsFull ? "bg-emerald-500" : meetsBasic ? "bg-amber-500" : "bg-red-400"}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {meetsFull ? "≥50К ✓" : meetsBasic ? "≥25К" : "ниже нормы"}
+                      </div>
                     </div>
-                    <div className="h-1.5 w-full rounded-full bg-muted/40">
-                      <div
-                        className={`h-full rounded-full transition-all ${meetsFull ? "bg-emerald-500" : meetsBasic ? "bg-amber-500" : "bg-red-400"}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {meetsFull ? "≥50К ✓" : meetsBasic ? "≥25К" : "ниже нормы"}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-3 border-t border-border pt-2 text-[10px] text-muted-foreground/60">
-              Данные за текущий месяц. Нормы: ≥50 000 ₽ (полная) / ≥25 000 ₽ (базовая). Выплаты на усмотрение Организации (п. 1.3).
-            </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 border-t border-border pt-2 text-[10px] text-muted-foreground/60">
+                Нормы утверждены руководителем центра. Полная выплата — максимум активной программы, базовая — её минимум (выплаты на усмотрение Организации, п. 1.3). Часы — по расписанию, будет уточнено после подключения данных.
+              </div>
+              </>
+            )}
           </Card>
         </section>
       )}
@@ -417,24 +521,32 @@ function Dashboard() {
               <Card className="p-5 shadow-[var(--shadow-card)]">
                 <div className="mb-3 flex items-center gap-2">
                   <ClipboardList className="h-4 w-4 text-primary" />
-                  <h3 className="font-display text-base font-bold text-secondary">Последний план</h3>
+                  <h3 className="font-display text-base font-bold text-secondary">Планы мероприятий</h3>
                 </div>
-                {myPlans.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">Нет планов</p>
+                {plansError ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">{plansError}</p>
+                ) : !myPlanSummary ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">Нет планов на {new Date().getFullYear()} год</p>
                 ) : (
                   <div>
-                    <div className="text-sm font-semibold text-secondary">{myPlans[0].periodLabel}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">{myPlans[0].items.length} мероприятий</div>
-                    <div className="mt-2">
-                      <Badge variant="outline" className={`font-normal ${
-                        myPlans[0].status === "approved" ? "bg-[color:var(--success)]/15 text-[color:var(--success)] border-[color:var(--success)]/30"
-                        : myPlans[0].status === "rejected" ? "bg-destructive/10 text-destructive border-destructive/30"
-                        : myPlans[0].status === "submitted" ? "bg-primary/10 text-primary border-primary/30"
-                        : "bg-muted text-muted-foreground border-border"
-                      }`}>
-                        {myPlans[0].status === "approved" ? "Утверждён" : myPlans[0].status === "rejected" ? "Отклонён" : myPlans[0].status === "submitted" ? "На проверке" : "Черновик"}
+                    <div className="text-sm font-semibold text-secondary">{myPlanSummary.plan.periodLabel}</div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {myPlanSummary.qCounts.map(({ quarter, count }) => (
+                        <Badge key={quarter} variant="outline" className="border-primary/30 bg-primary/5 font-normal text-primary">
+                          {quarter} кв: {count}
+                        </Badge>
+                      ))}
+                      <Badge variant="outline" className={`font-normal ${statusConfig[myPlanSummary.agg].style}`}>
+                        {statusConfig[myPlanSummary.agg].label}
                       </Badge>
                     </div>
+                    {myPlanSummary.deadline && (
+                      <p className={`mt-2 flex items-center gap-1 text-xs font-semibold ${
+                        myPlanSummary.deadline.tone === "overdue" ? "text-destructive" : "text-amber-600 dark:text-amber-400"
+                      }`}>
+                        <AlertTriangle className="h-3 w-3 shrink-0" /> {myPlanSummary.deadline.text}
+                      </p>
+                    )}
                   </div>
                 )}
               </Card>
@@ -495,6 +607,40 @@ function Dashboard() {
         </>
       ) : (
       <>
+      {/* Plan deadlines (admin / director) */}
+      {planDeadlines.length > 0 && (
+        <section className="mt-6">
+          <Card className="p-5 shadow-[var(--shadow-card)]">
+            <div className="mb-3 flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-primary" />
+              <h3 className="font-display text-base font-bold text-secondary">Дедлайны планов</h3>
+            </div>
+            <ul className="space-y-3">
+              {planDeadlines.slice(0, 8).map(({ plan, info }) => (
+                <li
+                  key={plan.id}
+                  className={`flex items-center justify-between gap-3 rounded-lg border p-3 text-sm ${
+                    info.tone === "overdue"
+                      ? "border-destructive/30 bg-destructive/5"
+                      : "border-amber-300 bg-amber-50 dark:border-amber-700/40 dark:bg-amber-900/20"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold text-secondary">{plan.coachName}</div>
+                    <div className="text-xs text-muted-foreground">{plan.periodLabel} · {plan.discipline}</div>
+                  </div>
+                  <div className={`shrink-0 text-right text-xs font-semibold ${
+                    info.tone === "overdue" ? "text-destructive" : "text-amber-700 dark:text-amber-400"
+                  }`}>
+                    <AlertTriangle className="mr-1 inline h-3 w-3" /> {info.text}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </section>
+      )}
+
       {/* Charts */}
       <section className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card className="p-5 shadow-[var(--shadow-card)] lg:col-span-2">

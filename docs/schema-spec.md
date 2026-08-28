@@ -1,6 +1,6 @@
 # Спецификация схемы БД «СОКОЛ»
 
-> Версия 1.0 | PostgreSQL + SQLAlchemy | Дата: 2026-05-29
+> Версия 1.0 | PostgreSQL + SQLAlchemy | Дата: 2026-05-29 | Актуализация: 2026-08-28
 
 ---
 
@@ -1055,6 +1055,36 @@ class TimestampMixin:
 
 ---
 
+### 3.43 `incentive_criteria` — Нормы критериев стимулирования (ADR-019, Приложение №6)
+
+Нормативные значения (полная/базовая норма) для каждого из 5 критериев оценки тренера. Одна запись на центр, утверждается руководителем центра (admin — свой центр) / руководителем центров (director, superadmin).
+
+| Поле | Тип | Ограничения | Default | Описание |
+|------|-----|-------------|---------|----------|
+| `id` | UUID | PK | gen_random_uuid() | |
+| `center_id` | UUID | FK → centers.id ON DELETE CASCADE | | Центр (UNIQUE вместе с id-записью) |
+| `updated_by` | UUID | FK → users.id ON DELETE SET NULL, NULLABLE | | Кто утвердил |
+| `athletes_full` | INTEGER | NOT NULL | 30 | Критерий 1, полная норма: занимающиеся ≤21 года |
+| `athletes_basic` | INTEGER | NOT NULL | 15 | Критерий 1, базовая норма |
+| `hours_full` | NUMERIC(4,1) | NOT NULL | 9.0 | Критерий 2, полная норма: часов в неделю |
+| `hours_basic` | NUMERIC(4,1) | NOT NULL | 4.5 | Критерий 2, базовая норма |
+| `social_events_full` | INTEGER | NOT NULL | 1 | Критерий 3, полная норма |
+| `social_events_basic` | INTEGER | NOT NULL | 1 | Критерий 3, базовая норма |
+| `sports_events_full` | INTEGER | NOT NULL | 1 | Критерий 4, полная норма |
+| `sports_events_basic` | INTEGER | NOT NULL | 1 | Критерий 4, базовая норма |
+| `development_events_full` | INTEGER | NOT NULL | 1 | Критерий 5, полная норма |
+| `development_events_basic` | INTEGER | NOT NULL | 1 | Критерий 5, базовая норма |
+| `created_at` | TIMESTAMPTZ | NOT NULL | now() | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | now() | |
+
+**Связи:**
+- many → 1 `centers`
+- many → 1 `users` (по `updated_by`)
+
+> Валидация «базовая ≤ полная» выполняется на уровне приложения (`IncentiveCriteriaUpsert.validate_levels` → 422); CHECK-ограничение намеренно не вводится (значения настраиваются через API админом центра).
+
+---
+
 ## 4. Правила внешних ключей
 
 ### 4.1 ON DELETE — стратегия
@@ -1122,6 +1152,7 @@ class TimestampMixin:
 | `plan_items` | `ix_plan_items_plan` | BTREE | `(plan_id)` |
 | `payout_rows` | `ix_payout_rows_protocol` | BTREE | `(protocol_id)` |
 | `payout_rows` | `ix_payout_rows_coach` | BTREE | `(coach_id)` |
+| `incentive_criteria` | `uq_incentive_criteria_center` | UNIQUE | `(center_id)` |
 
 ### 5.1 CHECK-ограничения
 

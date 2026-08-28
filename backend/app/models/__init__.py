@@ -14,6 +14,7 @@ from app.models.document import Document, DocumentApproval, DocumentTemplate
 from app.models.event import Competition, Event, Participant, Result
 from app.models.event_plan import EventPlan, PlanItem
 from app.models.group import Group, GroupMember
+from app.models.incentive_criteria import IncentiveCriteria
 from app.models.incentive_program import IncentiveProgram
 from app.models.organization import Center, Region
 from app.models.report import Report, ReportSubmission, ReportTemplate
@@ -55,6 +56,7 @@ __all__ = [
     "Document",
     "DocumentApproval",
     "IncentiveProgram",
+    "IncentiveCriteria",
     "CommissionProtocol",
     "PayoutRow",
     "EventPlan",

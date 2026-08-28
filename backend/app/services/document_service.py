@@ -21,8 +21,8 @@ class DocumentService:
         templates, _ = await self.template_repo.list()
         return templates
 
-    async def create_document(self, data: DocumentCreate):
-        return await self.document_repo.create(**data.model_dump())
+    async def create_document(self, data: DocumentCreate, author_id: str):
+        return await self.document_repo.create(author_id=author_id, **data.model_dump())
 
     async def list_documents(self, page: int = 1, per_page: int = 50):
         return await self.document_repo.list(page=page, per_page=per_page)
@@ -32,5 +32,9 @@ class DocumentService:
         decision: str, comment: str | None = None,
     ):
         return await self.approval_repo.create(
-            document_id=document_id, approved_by=user_id, decision=decision, comment=comment
+            document_id=document_id,
+            approver_id=user_id,
+            action=decision,
+            comment=comment,
+            step_order=0,
         )

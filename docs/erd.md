@@ -476,6 +476,24 @@ erDiagram
         timestamp updated_at
     }
 
+    incentive_criteria {
+        uuid id PK
+        uuid center_id FK UK
+        uuid updated_by FK
+        integer athletes_full
+        integer athletes_basic
+        numeric hours_full
+        numeric hours_basic
+        integer social_events_full
+        integer social_events_basic
+        integer sports_events_full
+        integer sports_events_basic
+        integer development_events_full
+        integer development_events_basic
+        timestamp created_at
+        timestamp updated_at
+    }
+
     %% ===== VK MINI APP (Planned) =====
     vk_users {
         uuid id PK
@@ -567,6 +585,7 @@ erDiagram
     users ||--o{ audit_logs : logs
 
     %% ===== СВЯЗИ: ПРОГРАММА СТИМУЛИРОВАНИЯ =====
+    centers ||--o| incentive_criteria : configures
     incentive_programs ||--o{ event_plans : governs
     incentive_programs ||--o{ reports : links_to
     centers ||--o{ commission_protocols : hosts
@@ -666,6 +685,7 @@ erDiagram
 | `payout_rows` | Строки выплат тренерам | protocol_id, coach_id, report_id, gross/ndfl/insurance/net_amount |
 | `event_plans` | Годовые планы мероприятий тренеров | coach_id, center_id, year, status |
 | `plan_items` | Элементы плана (по месяцам) | plan_id, category (3/4/5), month, name, participants |
+| `incentive_criteria` | Нормативы (полная/базовая) 5 критериев на центр | center_id (UNIQUE), athletes/hours/events × full/basic, updated_by |
 
 ### 2.10 VK Mini App (Planned)
 
@@ -733,6 +753,7 @@ erDiagram
 | `plan_items` | plan_id | Состав плана |
 | `payout_rows` | protocol_id | Выплаты протокола |
 | `payout_rows` | coach_id | Выплаты тренера |
+| `incentive_criteria` | center_id (UNIQUE) | Одна запись норм на центр |
 
 ### 4.1 CHECK-ограничения
 
@@ -751,6 +772,7 @@ erDiagram
 Центр (centers) ──has──> Спортсмены (athletes)
 Центр (centers) ──has──> Тренеры (coaches)
 Центр (centers) ──hosts──> Протоколы комиссии (commission_protocols)
+Центр (centers) ──configures──> Нормы критериев (incentive_criteria)
 Центр (centers) ──belongs_to──> Планы мероприятий (event_plans)
 Тренер (coaches) ──leads──> Группы (groups)
 Тренер (coaches) ──coaches──> Спортсмены (athletes)

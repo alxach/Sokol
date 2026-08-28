@@ -24,6 +24,10 @@ import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportsNewRouteImport } from './routes/reports/new'
 import { Route as PlansNewRouteImport } from './routes/plans/new'
+import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AdminProgramsRouteImport } from './routes/admin/programs'
+import { Route as AdminOrgRouteImport } from './routes/admin/org'
+import { Route as AdminAuditRouteImport } from './routes/admin/audit'
 
 const SchedulesRoute = SchedulesRouteImport.update({
   id: '/schedules',
@@ -100,6 +104,26 @@ const PlansNewRoute = PlansNewRouteImport.update({
   path: '/new',
   getParentRoute: () => PlansRoute,
 } as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminProgramsRoute = AdminProgramsRouteImport.update({
+  id: '/admin/programs',
+  path: '/admin/programs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminOrgRoute = AdminOrgRouteImport.update({
+  id: '/admin/org',
+  path: '/admin/org',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminAuditRoute = AdminAuditRouteImport.update({
+  id: '/admin/audit',
+  path: '/admin/audit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -115,6 +139,10 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/reports': typeof ReportsRouteWithChildren
   '/schedules': typeof SchedulesRoute
+  '/admin/audit': typeof AdminAuditRoute
+  '/admin/org': typeof AdminOrgRoute
+  '/admin/programs': typeof AdminProgramsRoute
+  '/admin/users': typeof AdminUsersRoute
   '/plans/new': typeof PlansNewRoute
   '/reports/new': typeof ReportsNewRoute
 }
@@ -132,6 +160,10 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/reports': typeof ReportsRouteWithChildren
   '/schedules': typeof SchedulesRoute
+  '/admin/audit': typeof AdminAuditRoute
+  '/admin/org': typeof AdminOrgRoute
+  '/admin/programs': typeof AdminProgramsRoute
+  '/admin/users': typeof AdminUsersRoute
   '/plans/new': typeof PlansNewRoute
   '/reports/new': typeof ReportsNewRoute
 }
@@ -150,6 +182,10 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/reports': typeof ReportsRouteWithChildren
   '/schedules': typeof SchedulesRoute
+  '/admin/audit': typeof AdminAuditRoute
+  '/admin/org': typeof AdminOrgRoute
+  '/admin/programs': typeof AdminProgramsRoute
+  '/admin/users': typeof AdminUsersRoute
   '/plans/new': typeof PlansNewRoute
   '/reports/new': typeof ReportsNewRoute
 }
@@ -169,6 +205,10 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reports'
     | '/schedules'
+    | '/admin/audit'
+    | '/admin/org'
+    | '/admin/programs'
+    | '/admin/users'
     | '/plans/new'
     | '/reports/new'
   fileRoutesByTo: FileRoutesByTo
@@ -186,6 +226,10 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reports'
     | '/schedules'
+    | '/admin/audit'
+    | '/admin/org'
+    | '/admin/programs'
+    | '/admin/users'
     | '/plans/new'
     | '/reports/new'
   id:
@@ -203,6 +247,10 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reports'
     | '/schedules'
+    | '/admin/audit'
+    | '/admin/org'
+    | '/admin/programs'
+    | '/admin/users'
     | '/plans/new'
     | '/reports/new'
   fileRoutesById: FileRoutesById
@@ -221,6 +269,10 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   ReportsRoute: typeof ReportsRouteWithChildren
   SchedulesRoute: typeof SchedulesRoute
+  AdminAuditRoute: typeof AdminAuditRoute
+  AdminOrgRoute: typeof AdminOrgRoute
+  AdminProgramsRoute: typeof AdminProgramsRoute
+  AdminUsersRoute: typeof AdminUsersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -330,6 +382,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlansNewRouteImport
       parentRoute: typeof PlansRoute
     }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/programs': {
+      id: '/admin/programs'
+      path: '/admin/programs'
+      fullPath: '/admin/programs'
+      preLoaderRoute: typeof AdminProgramsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/org': {
+      id: '/admin/org'
+      path: '/admin/org'
+      fullPath: '/admin/org'
+      preLoaderRoute: typeof AdminOrgRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/audit': {
+      id: '/admin/audit'
+      path: '/admin/audit'
+      fullPath: '/admin/audit'
+      preLoaderRoute: typeof AdminAuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -368,6 +448,10 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   ReportsRoute: ReportsRouteWithChildren,
   SchedulesRoute: SchedulesRoute,
+  AdminAuditRoute: AdminAuditRoute,
+  AdminOrgRoute: AdminOrgRoute,
+  AdminProgramsRoute: AdminProgramsRoute,
+  AdminUsersRoute: AdminUsersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

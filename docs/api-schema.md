@@ -20,6 +20,8 @@
 12. [Аналитика и BI](#12-аналитика-и-bi)
 13. [Уведомления](#13-уведомления)
 14. [Аудит](#14-аудит)
+15. [Импорт / Экспорт](#15-импорт--экспорт)
+16. [Материальное стимулирование (ADR-019)](#16-материальное-стимулирование-adr-019)
 
 ---
 
@@ -434,3 +436,55 @@ GET /analytics/dashboard?period=month&date_from=2026-01-01&date_to=2026-05-29&ce
 | GET | `/export/athletes` | Экспорт спортсменов в Excel | superadmin, admin, coach* |
 | GET | `/export/attendance` | Экспорт посещаемости | superadmin, admin, coach* |
 | GET | `/export/reports/{id}` | Экспорт отчёта (xlsx/pdf/docx) | superadmin, admin, author |
+
+---
+
+## 16. Материальное стимулирование (ADR-019)
+
+База: `/incentive`. Подробнее о бизнес-правилах — [Руководство по стимулированию](incentive-program-guide.md).
+
+### 16.1 Программы
+
+| Метод | Путь | Описание | Доступ |
+|-------|------|----------|--------|
+| GET | `/incentive/programs` | Список программ | coach, admin, director |
+| GET | `/incentive/programs/{id}` | Детально | coach, admin, director |
+| POST | `/incentive/programs` | Создать программу (форма — в UI только superadmin) | superadmin |
+| PATCH | `/incentive/programs/{id}` | Редактировать (активировать/архивировать) | superadmin |
+
+### 16.2 Критерии
+
+| Метод | Путь | Описание | Доступ |
+|-------|------|----------|--------|
+| GET | `/incentive/criteria` | Нормы критериев; опциональный фильтр `center_id` | coach* (свой центр), admin* (свой центр), director, superadmin |
+| PUT | `/incentive/criteria/{center_id}` | Утвердить/изменить нормы центра (10 полей full/basic; валидация basic ≤ full → 422) | admin* (свой центр), director, superadmin |
+
+> \* — если у пользователя центр не назначен (`center_id = NULL`), возвращается пустой список; запись создаётся при первом PUT (upsert).
+
+### 16.3 Планы мероприятий
+
+| Метод | Путь | Описание | Доступ |
+|-------|------|----------|--------|
+| POST | `/incentive/plans` | Создать годовой план | coach (свой), admin, director |
+| GET | `/incentive/plans` | Список планов (фильтры `center_id`, `year`) | coach, admin, director |
+| GET | `/incentive/plans/{id}` | Детально | coach, admin, director |
+| PUT | `/incentive/plans/{id}` | Редактировать план | владелец, admin, director |
+| DELETE | `/incentive/plans/{id}` | Удалить (только draft) | владелец, admin, director |
+| POST | `/incentive/plans/{id}/items` | Добавить элемент плана (категория 3/4/5) | владелец, admin, director |
+| GET | `/incentive/plans/{id}/items` | Элементы плана | coach, admin, director |
+| PUT | `/incentive/plans/items/{item_id}` | Редактировать элемент | владелец, admin, director |
+| DELETE | `/incentive/plans/items/{item_id}` | Удалить элемент | владелец, admin, director |
+| POST | `/incentive/plans/items/{item_id}/submit` | Отправить на проверку | владелец |
+| POST | `/incentive/plans/items/{item_id}/redraft` | Вернуть в черновик | владелец |
+| POST | `/incentive/plans/items/{item_id}/approve` | Утвердить элемент | admin, director |
+| POST | `/incentive/plans/items/{item_id}/reject` | Отклонить с комментарием | admin, director |
+
+### 16.4 Протоколы комиссии и выплаты
+
+| Метод | Путь | Описание | Доступ |
+|-------|------|----------|--------|
+| POST | `/incentive/protocols` | Создать протокол заседания комиссии | admin, director |
+| GET | `/incentive/protocols` | Список протоколов (фильтр `center_id`) | admin, director |
+| GET | `/incentive/protocols/{id}` | Детально | admin, director |
+| POST | `/incentive/protocols/{id}/payouts` | Добавить строку выплаты (gross → net пересчёт сервером) | admin, director |
+| GET | `/incentive/protocols/{id}/payouts` | Строки выплат | admin, director |

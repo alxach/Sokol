@@ -64,7 +64,7 @@ function LoginPage() {
           <h2 className="text-lg font-semibold text-foreground mb-1">Вход в систему</h2>
           <p className="text-sm text-muted-foreground mb-6">Используйте корпоративные учётные данные.</p>
           <div className="mb-6 rounded-lg border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
-            Демо: <strong className="text-foreground">admin@sokol.ru</strong> (админ) или <strong className="text-foreground">coach@sokol.ru</strong> (тренер)
+            Демо: <strong className="text-foreground">superadmin@sokol.ru</strong> / <strong className="text-foreground">admin123</strong>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4 max-w-sm">

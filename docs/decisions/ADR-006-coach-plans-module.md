@@ -1,7 +1,7 @@
 # ADR-006: План мероприятий тренера (Plan module)
 
 ## Статус
-Accepted
+Accepted (implemented 2026-08-28)
 
 ## Дата
 2026-06-20
@@ -127,6 +127,36 @@ PlanItem:
 - Группировка по кварталам → месяцам
 - Admin/director: утвердить/отклонить submitted. При отклонении — обязательный комментарий
 - Подпись тренера внизу
+
+## Implementation notes (2026-08-28)
+
+Бэкенд-воркфлоу и фронтенд переведены со моков на реальный API. Отклонения от спеки выше:
+
+- **Неймспейс:** всё живёт в существующем инцентив-модуле `/api/v1/incentive/plans` (см. ADR-019), а не отдельный `/api/v1/plans`.
+- **Создание плана — get-or-create:** `POST /plans` возвращает существующий план на тот же `(coach_id, year)` с `200`, а не 409. Тренер может иметь план на любой год, не только текущий.
+- **Статусная модель дополнена `redraft`:** `submitted → reject → draft` (только coach-владелец) → повторный submit. `POST /plans/items/{id}/redraft`; `/submit` валид только из `draft`; `approve`/`reject` — только из `submitted` (иначе 422).
+- **Comment обязателен** при reject (422 при пустой строке).
+- **Роли:** создание плана/мероприятий — только coach (superadmin добавляет с явными `coach_id`/`center_id`); проверка (`approve`/`reject`) — admin своего центра, director (все центры), superadmin. `require_roles("admin","director")` на роуте.
+- **Scoping:** coach — только свои планы; admin — только планы своего центра (`users.center_id`); director/superadmin — все (+ фильтры `center_id`, `year`).
+- **Правки мероприятий:** `PUT/DELETE /plans/items/{id}` — только `draft`, кроме суперадмина.
+- **Агрегат плана:** `status` плана вычисляется из items: любой `submitted` → submitted; иначе любой `rejected` → rejected; иначе все `approved` → approved; иначе draft.
+- **Month — число** (1–12) на бэке (фронт маппит в «Январь»…); категория — строка (`"3"|"4"|"5"` из Приложения №5 Положения), на фронте в `planCategories`.
+- **`coach_user_id`** добавлен в `EventPlanOut` — профиль тренера (`coach_id`) ≠ id пользователя; фронт фильтрует планы по `coach_user_id`.
+- **Draft-правки коуча:** submit/redraft/delete — асинхронные вызовы API + `onChanged` refetch; admin/director approve/reject — через модалку с полем обязательного комментария.
+- **Импорт из Excel** — раскрывает план года (get-or-create для коуча; для admin/director — поиск плана по `coachName` + год, иначе alert), затем `POST` items.
+- Миграция `e1f2a3b4c5d6` (`reviewer_comment`/`submitted_at` на `plan_items`) применена к dev-БД.
+- Тесты: `backend/tests/test_plans_workflow.py` (9 кейсов); весь набор — 60/60 зелёные. Ruff чист.
+- Файлы: `backend/app/schemas/incentive.py`, `backend/app/services/incentive_service.py`, `backend/app/dependencies.py`, `backend/app/modules/incentive/router.py`, `frontend/src/lib/api/plans.functions.ts`, `frontend/src/routes/plans.tsx`.
+
+### Закрытие расхождений со спекой (2026-08-28, аудит plans ↔ ADR-006/coach-spec/admin-spec)
+
+- **`PUT /incentive/plans/{plan_id}`** — правка меты плана (coach владелец, директор/superadmin; 422 если не `draft` по агрегату; `coach_id`/`center_id` нередактируемы запросом тренера).
+- **`DELETE /incentive/plans/{plan_id}`** — удаление плана целиком (admin своего центра, director, superadmin; каскад item-ов по FK `ON DELETE CASCADE`); тренеру запрещено.
+- **`PUT /incentive/plans/items/{itemId}`** — редактирование элемента плана (только `draft`, кроме суперадмина).
+- **`/plans/new`** переписан на API: выбор года (2025–2027), `ensurePlan(year)`, локальные карточки, пакетное «Сохранить черновик» / «Отправить на проверку» (save всех новых + submit всех draft), счётчик категорий, редактирование в карточках, read-only для не-draft, фильтр по роли (только coach).
+- **Дашборд:** тренерская карточка «Планы мероприятий» — сводка по кварталам текущего года из API (coach-spec §2.41); admin/director/superadmin — блок «Дедлайны планов» (admin-spec §2.34): планы с незакрытым кварталом и дедлайном ≤14 дней (🟡) или просроченные (🔴).
+- **`/plans` (coach-вид):** добавлён счётчик мероприятий по категориям, индикатор дедлайна, баннер п. 3.1.3; директору — фильтр по центру (`GET /organizations/centers`), в модалке плана — «Удалить план» для admin/director.
+- Тесты: `test_plans_workflow.py` += `test_update_plan_draft_only_and_roles`, `test_delete_plan_admin_only`; весь набор — 62/62 зелёные. Ruff и tsc без новых ошибок.
 
 ## Alternatives Considered
 

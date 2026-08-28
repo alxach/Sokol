@@ -55,6 +55,14 @@ async def update_athlete(
     return await service.update(athlete_id, data)
 
 
+@router.delete("/{athlete_id}")
+async def delete_athlete(
+    athlete_id: str,
+    service: AthleteService = Depends(get_athlete_service),
+):
+    return await service.delete(athlete_id)
+
+
 @router.post("/{athlete_id}/documents")
 async def add_document(
     athlete_id: str,

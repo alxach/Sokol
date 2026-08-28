@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Filter, Plus, Search, Medal, Pencil, Trash2, X, FileDown, Upload, Info, Award, CalendarCheck, FileText } from "lucide-react";
+import { Filter, Plus, Search, Pencil, Trash2, X, FileDown, Upload, Info } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
@@ -17,14 +17,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  athletes,
-  groups,
-  attendanceRecords,
-  type AthleteStatus,
-  type Discipline,
-  type Athlete,
-  type Group,
-} from "@/lib/mock-data";
+  athleteFullName,
+  athleteStatusLabels,
+  calcAge,
+  createAthlete,
+  deleteAthlete,
+  fetchAthletes,
+  type AthleteDto,
+  type AthleteStatusKey,
+} from "@/lib/api/athletes.functions";
+import { findCoachByUserId } from "@/lib/api/coaches.functions";
 import { exportToExcel, importAthletesFromExcel } from "@/lib/api/exports.functions";
 import { MiniStat } from "@/components/mini-stat";
 import { AthleteModal, disciplines } from "@/components/athlete-modal";
@@ -47,17 +49,38 @@ export const Route = createFileRoute("/athletes")({
   head: () => ({
     meta: [
       { title: "Спортсмены — СОКОЛ" },
-      { name: "description", content: "CRM спортсменов: карточки, дисциплины, рейтинг, медали." },
+      { name: "description", content: "CRM спортсменов: карточки, дисциплины." },
     ],
   }),
   component: AthletesPage,
 });
 
-const statusStyle: Record<AthleteStatus, string> = {
-  "Активный": "bg-[color:var(--success)]/15 text-[color:var(--success)] border-[color:var(--success)]/30",
-  "Травма": "bg-destructive/10 text-destructive border-destructive/30",
-  "Резерв": "bg-muted text-muted-foreground border-border",
+const statusStyle: Record<AthleteStatusKey, string> = {
+  active: "bg-[color:var(--success)]/15 text-[color:var(--success)] border-[color:var(--success)]/30",
+  inactive: "bg-primary/10 text-primary border-primary/30",
+  graduated: "bg-muted text-muted-foreground border-border",
+  transferred: "bg-accent/15 text-accent border-accent/30",
+  expelled: "bg-destructive/10 text-destructive border-destructive/30",
 };
+
+interface ImportedAthlete {
+  tempId: number;
+  name: string;
+  discipline: string;
+  rank: string;
+  age: number;
+  city: string;
+  coach: string;
+  status: string;
+}
+
+function splitFullName(name: string): { last: string; first: string; middle: string } {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 0) return { last: "", first: "", middle: "" };
+  if (parts.length === 1) return { last: "", first: parts[0], middle: "" };
+  if (parts.length === 2) return { last: parts[0], first: parts[1], middle: "" };
+  return { last: parts[0], first: parts[1], middle: parts.slice(2).join(" ") };
+}
 
 function AthletesPage() {
   const { loading, user } = useAuthGuard();
@@ -65,19 +88,79 @@ function AthletesPage() {
   const [query, setQuery] = useState("");
   const [discipline, setDiscipline] = useState<(typeof disciplines)[number]>("Все");
   const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState<Athlete | null>(null);
-  const [detailAthlete, setDetailAthlete] = useState<Athlete | null>(null);
+  const [editing, setEditing] = useState<AthleteDto | null>(null);
+  const [detailAthlete, setDetailAthlete] = useState<AthleteDto | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [importData, setImportData] = useState<{
-    athletes: { tempId: number; name: string; discipline: string; rank: string; age: number; city: string; coach: string; status: string; gold: number; silver: number; bronze: number; rating: number; lastEvent: string }[];
-  } | null>(null);
+  const [importData, setImportData] = useState<{ athletes: ImportedAthlete[] } | null>(null);
   const [importing, setImporting] = useState(false);
+  const [items, setItems] = useState<AthleteDto[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(true);
+  const [itemsError, setItemsError] = useState("");
+  const [myCoachId, setMyCoachId] = useState<string | null>(null);
+
+  const loadList = useCallback(async (coachId: string | null, isCoachMode: boolean) => {
+    setItemsLoading(true);
+    setItemsError("");
+    try {
+      const res = await fetchAthletes({ coachId: isCoachMode ? coachId : null });
+      setItems(res.items);
+    } catch (err) {
+      setItemsError(err instanceof Error ? err.message : "Не удалось загрузить спортсменов");
+    } finally {
+      setItemsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (isCoach && user?.id) {
+        let coachId: string | null = null;
+        try {
+          const c = await findCoachByUserId(user.id);
+          coachId = c?.id ?? null;
+        } catch {
+          coachId = null;
+        }
+        if (cancelled) return;
+        setMyCoachId(coachId);
+        await loadList(coachId, true);
+      } else {
+        await loadList(null, false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [isCoach, user, loadList]);
+
+  const handleDelete = async (a: AthleteDto) => {
+    if (!confirm(`Удалить ${athleteFullName(a)}?`)) return;
+    try {
+      await deleteAthlete(a.id);
+      setItems((prev) => prev.filter((x) => x.id !== a.id));
+    } catch (err) {
+      console.error(err);
+      alert("Не удалось удалить спортсмена");
+    }
+  };
 
   const handleExport = async () => {
     setExporting(true);
     try {
       const result = await exportToExcel({
-        data: { type: "athletes", data: filtered.map((a) => ({ ...a, groupId: a.groupId ?? undefined })) },
+        data: {
+          type: "athletes",
+          data: filtered.map((a) => ({
+            id: a.id,
+            name: athleteFullName(a),
+            discipline: a.sport_type,
+            rank: a.rank ?? "",
+            age: calcAge(a.birth_date),
+            city: a.center_city ?? a.center_name ?? "",
+            coach: a.coach_name ?? "",
+            status: athleteStatusLabels[(a.status as AthleteStatusKey)] ?? a.status,
+          })),
+        },
       });
       downloadBase64(result.base64, result.filename);
     } catch (err) {
@@ -109,58 +192,57 @@ function AthletesPage() {
     }
   };
 
-  const confirmImport = () => {
+  const confirmImport = async () => {
     if (!importData) return;
-    const maxId = athletes.reduce((m, a) => {
-      const num = parseInt(a.id.replace("SK-", ""), 10);
-      return num > m ? num : m;
-    }, 0);
-    for (const a of importData.athletes) {
-      const newId = maxId + 1 + a.tempId;
-      athletes.push({
-        id: `SK-${String(newId).padStart(4, "0")}`,
-        name: a.name,
-        discipline: a.discipline as Discipline,
-        rank: a.rank || "КМС",
-        age: a.age || 0,
-        city: a.city || "",
-        coach: a.coach || "",
-        status: (a.status as AthleteStatus) || "Активный",
-        medals: { gold: a.gold, silver: a.silver, bronze: a.bronze },
-        rating: a.rating || 0,
-        lastEvent: a.lastEvent || "",
-      });
+    setImporting(true);
+    try {
+      for (const a of importData.athletes) {
+        const { last, first, middle } = splitFullName(a.name);
+        if (!last || !first) continue;
+        const birthYear = a.age > 0 ? new Date().getFullYear() - a.age : 2000;
+        await createAthlete({
+          first_name: first,
+          last_name: last,
+          middle_name: middle || undefined,
+          birth_date: `${birthYear}-01-01`,
+          gender: "male",
+          sport_type: a.discipline || "Дзюдо",
+          coach_id: isCoach ? myCoachId ?? undefined : undefined,
+        });
+      }
+      setImportData(null);
+      await loadList(myCoachId, isCoach);
+    } catch (err) {
+      console.error(err);
+      alert("Не удалось импортировать спортсменов: " + (err instanceof Error ? err.message : "ошибка"));
+    } finally {
+      setImporting(false);
     }
-    setImportData(null);
-    setQuery((q) => q + " ");
-    setTimeout(() => setQuery((q) => q.trim()), 0);
   };
 
-  const accessible = useMemo(() => {
-    return isCoach && user?.coachName
-      ? athletes.filter((a) => a.coach === user.coachName)
-      : athletes;
-  }, [isCoach, user]);
+  const disciplineOptions = useMemo(() => {
+    return ["Все", ...new Set(items.map((a) => a.sport_type))];
+  }, [items]);
 
   const filtered = useMemo(() => {
-    return accessible.filter((a) => {
+    return items.filter((a) => {
       const q = query.trim().toLowerCase();
-      const matchQ =
-        !q ||
-        a.name.toLowerCase().includes(q) ||
-        a.id.toLowerCase().includes(q) ||
-        a.city.toLowerCase().includes(q);
-      const matchD = discipline === "Все" || a.discipline === discipline;
+      const haystack = [athleteFullName(a), a.id, a.center_city ?? "", a.center_name ?? "", a.coach_name ?? ""]
+        .join(" ")
+        .toLowerCase();
+      const matchQ = !q || haystack.includes(q);
+      const matchD = discipline === "Все" || a.sport_type === discipline;
       return matchQ && matchD;
     });
-  }, [query, discipline, accessible]);
+  }, [query, discipline, items]);
 
   const totals = useMemo(() => {
     const total = filtered.length;
-    const active = filtered.filter((a) => a.status === "Активный").length;
-    const gold = filtered.reduce((s, a) => s + a.medals.gold, 0);
-    const avg = total ? Math.round(filtered.reduce((s, a) => s + a.rating, 0) / total) : 0;
-    return { total, active, gold, avg };
+    const active = filtered.filter((a) => a.status === "active").length;
+    const ages = filtered.map((a) => calcAge(a.birth_date)).filter((n) => n > 0);
+    const avgAge = ages.length ? Math.round(ages.reduce((s, n) => s + n, 0) / ages.length) : 0;
+    const ranked = filtered.filter((a) => a.rank && a.rank.length > 0).length;
+    return { total, active, avgAge, ranked };
   }, [filtered]);
 
   if (loading) {
@@ -179,7 +261,7 @@ function AthletesPage() {
             {isCoach ? "Мои спортсмены" : "Реестр спортсменов"}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {totals.total} в выборке · {totals.active} активных · средний рейтинг {totals.avg}
+            {totals.total} в выборке · {totals.active} активных · средний возраст {totals.avgAge}
           </p>
         </div>
         <div className="flex gap-2">
@@ -195,22 +277,29 @@ function AthletesPage() {
           </label>
           </>
           )}
-          <Button variant="outline" disabled>
-            <Filter className="mr-2 h-4 w-4" /> Фильтры
-          </Button>
+          {!isCoach && (
+            <Button variant="outline" disabled>
+              <Filter className="mr-2 h-4 w-4" /> Фильтры
+            </Button>
+          )}
           <Button onClick={() => { setEditing(null); setShowModal(true); }} className="bg-primary text-primary-foreground hover:bg-primary/90">
             <Plus className="mr-2 h-4 w-4" /> Добавить
           </Button>
         </div>
       </div>
 
-      {/* Mini KPIs */}
       <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MiniStat label="Всего в выборке" value={totals.total.toString()} accent="primary" />
         <MiniStat label="Активные" value={totals.active.toString()} accent="success" />
-        <MiniStat label="Золотых медалей" value={totals.gold.toString()} accent="accent" icon={<Medal className="h-4 w-4" />} />
-        <MiniStat label="Средний рейтинг" value={totals.avg.toLocaleString("ru-RU")} accent="secondary" />
+        <MiniStat label="Средний возраст" value={`${totals.avgAge} лет`} accent="accent" />
+        <MiniStat label="С разрядом" value={totals.ranked.toString()} accent="secondary" />
       </section>
+
+      {itemsError && (
+        <div className="mb-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          Ошибка загрузки: {itemsError}
+        </div>
+      )}
 
       <Card className="overflow-hidden shadow-[var(--shadow-card)]">
         <div className="flex flex-col gap-3 border-b border-border p-4 md:flex-row md:items-center">
@@ -219,26 +308,26 @@ function AthletesPage() {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-               placeholder="Фамилия"
+              placeholder="Фамилия"
               className="h-9 pl-9"
             />
           </div>
-          {!isCoach && (
-          <div className="flex flex-wrap gap-1.5">
-            {disciplines.map((d) => (
-              <button
-                key={d}
-                onClick={() => setDiscipline(d)}
-                className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                  discipline === d
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                }`}
-              >
-                {d}
-              </button>
-            ))}
-          </div>
+          {!isCoach && disciplineOptions.length > 1 && (
+            <div className="flex flex-wrap gap-1.5">
+              {disciplineOptions.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setDiscipline(d as (typeof disciplines)[number])}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                    discipline === d
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
@@ -252,74 +341,55 @@ function AthletesPage() {
                 <TableHead>Разряд</TableHead>
                 {!isCoach && <TableHead>Тренер</TableHead>}
                 <TableHead>Статус</TableHead>
-                <TableHead>Группа</TableHead>
-                <TableHead className="text-center">Медали (З/С/Б)</TableHead>
-                <TableHead className="text-right">Рейтинг</TableHead>
                 <TableHead className="w-[80px] text-right">Действия</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((a) => (
+              {itemsLoading ? (
+                <TableRow>
+                  <TableCell colSpan={isCoach ? 6 : 7} className="py-12 text-center text-sm text-muted-foreground">
+                    Загрузка...
+                  </TableCell>
+                </TableRow>
+              ) : filtered.map((a) => (
                 <TableRow key={a.id} className="cursor-pointer hover:bg-muted/40" onClick={() => setDetailAthlete(a)}>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{a.id}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{a.id.slice(0, 8)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-secondary text-xs font-bold text-primary-foreground">
-                        {a.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                        {athleteFullName(a).split(" ").map((n) => n[0]).filter(Boolean).join("").slice(0, 2)}
                       </div>
                       <div className="min-w-0">
-                        <div className="font-medium text-secondary">{a.name}</div>
-                        <div className="text-xs text-muted-foreground">{a.city} · {a.age} лет</div>
+                        <div className="font-medium text-secondary">{athleteFullName(a)}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {a.center_city || a.center_name || "Город не указан"} · {calcAge(a.birth_date)} лет
+                        </div>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="border-primary/30 bg-primary/5 font-normal text-primary">
-                      {a.discipline}
+                      {a.sport_type}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-sm font-medium text-secondary">{a.rank}</TableCell>
-                  {!isCoach && <TableCell className="text-sm text-muted-foreground">{a.coach}</TableCell>}
+                  <TableCell className="text-sm font-medium text-secondary">{a.rank || "—"}</TableCell>
+                  {!isCoach && <TableCell className="text-sm text-muted-foreground">{a.coach_name || "—"}</TableCell>}
                   <TableCell>
-                    <Badge variant="outline" className={`font-normal ${statusStyle[a.status]}`}>
-                      {a.status}
+                    <Badge variant="outline" className={`font-normal ${statusStyle[(a.status as AthleteStatusKey) ?? "active"]}`}>
+                      {athleteStatusLabels[(a.status as AthleteStatusKey)] ?? a.status}
                     </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {a.groupId ? (groups.find((g) => g.id === a.groupId)?.name ?? "—") : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-center gap-1.5 text-xs font-semibold">
-                      <span className="rounded bg-accent/20 px-1.5 py-0.5 text-secondary">{a.medals.gold}</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{a.medals.silver}</span>
-                          <span className="rounded bg-accent/15 px-1.5 py-0.5 text-accent">{a.medals.bronze}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right font-display font-bold text-primary">
-                    {a.rating.toLocaleString("ru-RU")}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <button
-                        onClick={() => { setEditing(a); setShowModal(true); }}
+                        onClick={(e) => { e.stopPropagation(); setEditing(a); setShowModal(true); }}
                         className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
                         title="Редактировать"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        onClick={() => {
-                          if (confirm(`Удалить ${a.name}?`)) {
-                            for (const g of groups) {
-                              const gi = g.athleteIds.indexOf(a.id);
-                              if (gi !== -1) g.athleteIds.splice(gi, 1);
-                            }
-                            const idx = athletes.findIndex((x) => x.id === a.id);
-                            if (idx !== -1) athletes.splice(idx, 1);
-                            setQuery((q) => q + " ");
-                            setTimeout(() => setQuery((q) => q.trim()), 0);
-                          }
-                        }}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(a); }}
                         className="rounded-md p-1.5 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
                         title="Удалить"
                       >
@@ -329,9 +399,9 @@ function AthletesPage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {filtered.length === 0 && (
+              {!itemsLoading && filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={isCoach ? 9 : 10} className="py-12 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={isCoach ? 6 : 7} className="py-12 text-center text-sm text-muted-foreground">
                     Ничего не найдено по выбранным фильтрам.
                   </TableCell>
                 </TableRow>
@@ -344,15 +414,12 @@ function AthletesPage() {
       {showModal && (
         <AthleteModal
           athlete={editing}
-          coachName={isCoach ? user?.coachName ?? "" : undefined}
-          coachDiscipline={isCoach ? user?.coachDiscipline : undefined}
-          coachCity={isCoach ? user?.city : undefined}
+          coachId={isCoach ? myCoachId ?? undefined : undefined}
           onClose={() => { setShowModal(false); setEditing(null); }}
           onSaved={() => {
             setShowModal(false);
             setEditing(null);
-            setQuery((q) => q + " ");
-            setTimeout(() => setQuery((q) => q.trim()), 0);
+            loadList(myCoachId, isCoach);
           }}
         />
       )}
@@ -364,7 +431,6 @@ function AthletesPage() {
         />
       )}
 
-      {/* Import confirmation modal */}
       {importData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setImportData(null)}>
           <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -394,8 +460,8 @@ function AthletesPage() {
             </div>
             <div className="flex justify-end gap-3 border-t border-border px-6 py-4">
               <Button variant="outline" onClick={() => setImportData(null)}>Отмена</Button>
-              <Button onClick={confirmImport} className="bg-primary text-primary-foreground">
-                Импортировать {importData.athletes.length} спортсменов
+              <Button onClick={confirmImport} className="bg-primary text-primary-foreground" disabled={importing}>
+                {importing ? "Импортируем..." : `Импортировать ${importData.athletes.length} спортсменов`}
               </Button>
             </div>
           </div>
@@ -407,51 +473,23 @@ function AthletesPage() {
 
 /* ---------- Athlete Detail Modal ---------- */
 
-const statusStyleAthlete: Record<AthleteStatus, string> = {
-  "Активный": "bg-[color:var(--success)]/15 text-[color:var(--success)] border-[color:var(--success)]/30",
-  "Травма": "bg-destructive/10 text-destructive border-destructive/30",
-  "Резерв": "bg-muted text-muted-foreground border-border",
-};
-
-const tabList = [
-  { id: "info", label: "Информация", icon: Info },
-  { id: "achievements", label: "Достижения", icon: Award },
-  { id: "attendance", label: "Посещаемость", icon: CalendarCheck },
-  { id: "documents", label: "Документы", icon: FileText },
-] as const;
-
-type TabId = (typeof tabList)[number]["id"];
-
-function AthleteDetailModal({ athlete, onClose }: { athlete: Athlete; onClose: () => void }) {
-  const [tab, setTab] = useState<TabId>("info");
-
-  const athleteAttendance = useMemo(
-    () => attendanceRecords.filter((r) => r.athleteId === athlete.id),
-    [athlete.id],
-  );
-  const attendancePct = useMemo(() => {
-    if (athleteAttendance.length === 0) return 0;
-    const present = athleteAttendance.filter((r) => r.status === "present").length;
-    return Math.round((present / athleteAttendance.length) * 100);
-  }, [athleteAttendance]);
-
-  const initials = athlete.name.split(" ").map((n) => n[0]).join("").slice(0, 2);
+function AthleteDetailModal({ athlete, onClose }: { athlete: AthleteDto; onClose: () => void }) {
+  const status = (athlete.status as AthleteStatusKey) ?? "active";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-border bg-card shadow-xl"
+        className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-2xl border border-border bg-card shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-primary to-secondary text-xs font-bold text-primary-foreground">
-              {initials}
+              {athleteFullName(athlete).split(" ").map((n) => n[0]).filter(Boolean).join("").slice(0, 2)}
             </div>
             <div>
-              <h3 className="font-display text-base font-bold text-secondary">{athlete.name}</h3>
-              <p className="text-xs text-muted-foreground">{athlete.id} · {athlete.city}</p>
+              <h3 className="font-display text-base font-bold text-secondary">{athleteFullName(athlete)}</h3>
+              <p className="text-xs text-muted-foreground">{athlete.id.slice(0, 8)} · {athlete.center_city || athlete.center_name || "Город не указан"}</p>
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -459,138 +497,61 @@ function AthleteDetailModal({ athlete, onClose }: { athlete: Athlete; onClose: (
           </Button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-0 border-b border-border px-6">
-          {tabList.map((t) => {
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-medium transition ${
-                  active
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <t.icon className="h-3.5 w-3.5" />
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
-          {tab === "info" && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                <div>
-                  <span className="text-xs text-muted-foreground">Дисциплина</span>
-                  <div className="mt-0.5 font-medium text-secondary">{athlete.discipline}</div>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">Разряд</span>
-                  <div className="mt-0.5 font-medium text-secondary">{athlete.rank}</div>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">Возраст</span>
-                  <div className="mt-0.5 font-medium text-secondary">{athlete.age} лет</div>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">Город</span>
-                  <div className="mt-0.5 font-medium text-secondary">{athlete.city}</div>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">Тренер</span>
-                  <div className="mt-0.5 font-medium text-secondary">{athlete.coach}</div>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">Статус</span>
-                  <div className="mt-1">
-                    <Badge variant="outline" className={`font-normal ${statusStyleAthlete[athlete.status]}`}>
-                      {athlete.status}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-              <div className="border-t border-border pt-4">
-                <span className="text-xs text-muted-foreground">Последнее мероприятие</span>
-                <div className="mt-0.5 font-medium text-secondary">{athlete.lastEvent || "—"}</div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+            <div>
+              <span className="text-xs text-muted-foreground">Дисциплина</span>
+              <div className="mt-0.5 font-medium text-secondary">{athlete.sport_type}</div>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Разряд</span>
+              <div className="mt-0.5 font-medium text-secondary">{athlete.rank || "—"}</div>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Возраст</span>
+              <div className="mt-0.5 font-medium text-secondary">{calcAge(athlete.birth_date)} лет</div>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Пол</span>
+              <div className="mt-0.5 font-medium text-secondary">
+                {athlete.gender === "female" ? "Женский" : "Мужской"}
               </div>
             </div>
-          )}
-
-          {tab === "achievements" && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="rounded-lg bg-accent/10 p-4 text-center">
-                  <div className="text-2xl font-bold text-secondary">{athlete.medals.gold}</div>
-                  <div className="text-xs text-muted-foreground">Золото</div>
-                </div>
-                <div className="rounded-lg bg-muted/40 p-4 text-center">
-                  <div className="text-2xl font-bold text-secondary">{athlete.medals.silver}</div>
-                  <div className="text-xs text-muted-foreground">Серебро</div>
-                </div>
-                <div className="rounded-lg bg-accent/10 p-4 text-center">
-                  <div className="text-2xl font-bold text-secondary">{athlete.medals.bronze}</div>
-                  <div className="text-xs text-muted-foreground">Бронза</div>
-                </div>
-              </div>
-              <div className="border-t border-border pt-4">
-                <span className="text-xs text-muted-foreground">Рейтинг</span>
-                <div className="mt-0.5 font-display text-2xl font-bold text-primary">
-                  {athlete.rating.toLocaleString("ru-RU")}
-                </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Дата рождения</span>
+              <div className="mt-0.5 font-medium text-secondary">
+                {new Date(athlete.birth_date).toLocaleDateString("ru-RU")}
               </div>
             </div>
-          )}
-
-          {tab === "attendance" && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 rounded-lg bg-muted/30 p-4">
-                <div className="text-2xl font-bold text-primary">{attendancePct}%</div>
-                <div className="text-xs text-muted-foreground">
-                  {athleteAttendance.filter((r) => r.status === "present").length} из {athleteAttendance.length} занятий
-                </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Центр</span>
+              <div className="mt-0.5 font-medium text-secondary">{athlete.center_name || "—"}</div>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Тренер</span>
+              <div className="mt-0.5 font-medium text-secondary">{athlete.coach_name || "—"}</div>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Статус</span>
+              <div className="mt-1">
+                <Badge variant="outline" className={`font-normal ${statusStyle[status]}`}>
+                  {athleteStatusLabels[status]}
+                </Badge>
               </div>
-              {athleteAttendance.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">Нет записей посещаемости</p>
-              ) : (
-                <div className="space-y-2">
-                  {athleteAttendance.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between rounded-lg border border-border px-4 py-2.5 text-sm">
-                      <span className="text-muted-foreground">{r.date}</span>
-                      <Badge
-                        variant="outline"
-                        className={`font-normal ${
-                          r.status === "present"
-                            ? "bg-[color:var(--success)]/15 text-[color:var(--success)] border-[color:var(--success)]/30"
-                            : r.status === "excused"
-                              ? "bg-primary/10 text-primary border-primary/30"
-                              : "bg-destructive/10 text-destructive border-destructive/30"
-                        }`}
-                      >
-                        {r.status === "present" ? "Присутствовал" : r.status === "excused" ? "Уваж. причина" : "Отсутствовал"}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
+            </div>
+          </div>
+          {athlete.notes && (
+            <div className="mt-5 border-t border-border pt-4">
+              <span className="text-xs text-muted-foreground">Примечание</span>
+              <div className="mt-0.5 font-medium text-secondary">{athlete.notes}</div>
             </div>
           )}
-
-          {tab === "documents" && (
-            <div className="flex flex-col items-center justify-center py-12 text-sm text-muted-foreground">
-              <FileText className="mb-3 h-10 w-10 text-muted-foreground/40" />
-              <p>Раздел в разработке</p>
-              <p className="text-xs">Медсправки, согласия, страховки</p>
-            </div>
-          )}
+          <div className="mt-5 flex items-center gap-2 rounded-lg bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+            <Info className="h-4 w-4" />
+            Разделы «Достижения», «Посещаемость» и «Документы» появятся после перевода соответствующих модулей.
+          </div>
         </div>
       </div>
     </div>
   );
 }
-
-

@@ -1,6 +1,7 @@
-from datetime import date
+from datetime import date, datetime
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class AthleteCreate(BaseModel):
@@ -28,20 +29,26 @@ class AthleteUpdate(BaseModel):
 
 
 class AthleteResponse(BaseModel):
-    id: str
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
     first_name: str
     last_name: str
     middle_name: str | None
     birth_date: date
     gender: str
-    center_id: str | None
-    coach_id: str | None
+    center_id: UUID | None
+    coach_id: UUID | None
     sport_type: str
     rank: str | None
     status: str
     enrollment_type: str
     notes: str | None
-    created_at: str
+    created_at: datetime
+    coach_name: str | None = None
+    coach_user_id: str | None = None
+    center_name: str | None = None
+    center_city: str | None = None
 
 
 class AthleteDocumentCreate(BaseModel):

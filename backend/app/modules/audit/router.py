@@ -1,5 +1,8 @@
+import uuid
+from datetime import date, datetime, time
+
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import require_roles
@@ -17,6 +20,9 @@ router = APIRouter(
 async def list_audit_logs(
     resource: str | None = Query(None),
     action: str | None = Query(None),
+    user_id: uuid.UUID | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -27,8 +33,14 @@ async def list_audit_logs(
         stmt = stmt.where(AuditLog.resource == resource)
     if action:
         stmt = stmt.where(AuditLog.action == action)
+    if user_id:
+        stmt = stmt.where(AuditLog.user_id == user_id)
+    if date_from:
+        stmt = stmt.where(AuditLog.created_at >= datetime.combine(date_from, time.min))
+    if date_to:
+        stmt = stmt.where(AuditLog.created_at <= datetime.combine(date_to, time.max))
 
-    total = len((await db.execute(stmt)).scalars().all())
+    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar()
     offset = (page - 1) * per_page
     result = await db.execute(stmt.offset(offset).limit(per_page))
     items = result.scalars().all()

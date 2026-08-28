@@ -10,7 +10,10 @@ class BaseRepository[T]:
         self.model = model
 
     async def create(self, **kwargs) -> T:
-        instance = self.model(id=str(uuid4()), **kwargs)
+        data = dict(kwargs)
+        if hasattr(self.model, "id"):
+            data.setdefault("id", str(uuid4()))
+        instance = self.model(**data)
         self.session.add(instance)
         await self.session.flush()
         return instance

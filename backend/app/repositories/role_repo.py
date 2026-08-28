@@ -17,3 +17,28 @@ class RoleRepository:
         stmt = select(Role).order_by(Role.code)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def create(
+        self, code: str, name: str, description: str | None = None,
+        is_system: bool = False,
+    ) -> Role:
+        role = Role(code=code, name=name, description=description, is_system=is_system)
+        self.session.add(role)
+        await self.session.flush()
+        return role
+
+    async def rename(self, code: str, name: str) -> Role | None:
+        role = await self.get_by_code(code)
+        if not role:
+            return None
+        role.name = name
+        await self.session.flush()
+        return role
+
+    async def delete(self, code: str) -> bool:
+        role = await self.get_by_code(code)
+        if not role:
+            return False
+        await self.session.delete(role)
+        await self.session.flush()
+        return True

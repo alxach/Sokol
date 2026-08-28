@@ -420,11 +420,6 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
           </div>
         )}
 
-        {/* Signature */}
-        <div className="border-t border-border px-6 py-4 text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">Тренер-преподаватель:</span> _______________ / {report.coachName}
-        </div>
-
         {/* Payout calculation (v8, Приложение №6) */}
         {report.payoutTier != null && report.payoutTier > 0 && (
           <div className="border-t border-border px-6 py-4">

@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends
 
 from app.core.dependencies import get_current_user, require_roles
 from app.dependencies import get_organization_service
-from app.schemas.organization import CenterCreate, RegionCreate
+from app.schemas.organization import (
+    CenterCreate,
+    CenterUpdate,
+    RegionCreate,
+    RegionUpdate,
+)
 from app.services.organization_service import OrganizationService
 
 router = APIRouter(
@@ -27,6 +32,31 @@ async def list_regions(
     return await service.list_regions()
 
 
+@router.get("/regions/{region_id}")
+async def get_region(
+    region_id: str,
+    service: OrganizationService = Depends(get_organization_service),
+):
+    return await service.get_region(region_id)
+
+
+@router.patch("/regions/{region_id}", dependencies=[Depends(require_roles("superadmin"))])
+async def update_region(
+    region_id: str,
+    data: RegionUpdate,
+    service: OrganizationService = Depends(get_organization_service),
+):
+    return await service.update_region(region_id, data)
+
+
+@router.delete("/regions/{region_id}", dependencies=[Depends(require_roles("superadmin"))])
+async def delete_region(
+    region_id: str,
+    service: OrganizationService = Depends(get_organization_service),
+):
+    return await service.delete_region(region_id)
+
+
 @router.post("/centers", dependencies=[Depends(require_roles("director"))])
 async def create_center(
     data: CenterCreate,
@@ -49,3 +79,20 @@ async def get_center(
     service: OrganizationService = Depends(get_organization_service),
 ):
     return await service.get_center(center_id)
+
+
+@router.put("/centers/{center_id}", dependencies=[Depends(require_roles("superadmin"))])
+async def update_center(
+    center_id: str,
+    data: CenterUpdate,
+    service: OrganizationService = Depends(get_organization_service),
+):
+    return await service.update_center(center_id, data)
+
+
+@router.delete("/centers/{center_id}", dependencies=[Depends(require_roles("superadmin"))])
+async def delete_center(
+    center_id: str,
+    service: OrganizationService = Depends(get_organization_service),
+):
+    return await service.delete_center(center_id)

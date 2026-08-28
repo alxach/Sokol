@@ -15,6 +15,7 @@ from app.modules.organizations.router import router as organizations_router
 from app.modules.reports.router import router as reports_router
 from app.modules.schedules.router import router as schedules_router
 from app.modules.users.router import router as users_router
+from app.modules.users_admin.router import router as users_admin_router
 
 router = APIRouter(prefix="/api/v1")
 
@@ -33,6 +34,7 @@ router.include_router(organizations_router)
 router.include_router(reports_router)
 router.include_router(schedules_router)
 router.include_router(users_router)
+router.include_router(users_admin_router)
 
 
 @router.get("/health")

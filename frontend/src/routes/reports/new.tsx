@@ -300,9 +300,6 @@ function NewReportPage() {
         </div>
 
         <div className="border-t border-border p-6">
-          <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">Тренер-преподаватель:</span> _______________ / {user?.coachName ?? "_______________"}
-          </p>
           <p className="mt-4 text-xs text-muted-foreground/60">
             * — поля, обязательные для заполнения. После отправки отчёт будет проверен руководителем центра.
           </p>

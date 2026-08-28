@@ -22,6 +22,7 @@ __all__ = [
     "DocumentRepository",
     "DocumentApprovalRepository",
     "IncentiveProgramRepository",
+    "IncentiveCriteriaRepository",
     "EventPlanRepository",
     "PlanItemRepository",
     "CommissionProtocolRepository",
@@ -52,6 +53,7 @@ from app.repositories.group_repo import GroupMemberRepository, GroupRepository
 from app.repositories.incentive_repo import (
     CommissionProtocolRepository,
     EventPlanRepository,
+    IncentiveCriteriaRepository,
     IncentiveProgramRepository,
     PayoutRowRepository,
     PlanItemRepository,

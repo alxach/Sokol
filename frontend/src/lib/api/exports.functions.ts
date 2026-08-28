@@ -22,11 +22,7 @@ const athleteSchema = z.object({
   age: z.number(),
   city: z.string(),
   coach: z.string(),
-  groupId: z.string().optional(),
   status: z.string(),
-  medals: z.object({ gold: z.number(), silver: z.number(), bronze: z.number() }),
-  rating: z.number(),
-  lastEvent: z.string(),
 });
 
 const coachSchema = z.object({
@@ -102,11 +98,6 @@ async function buildAthletesExcel(data: ExportPayload & { type: "athletes" }) {
     { header: "Город", key: "city", width: 18 },
     { header: "Тренер", key: "coach", width: 22 },
     { header: "Статус", key: "status", width: 14 },
-    { header: "Золото", key: "gold", width: 8 },
-    { header: "Серебро", key: "silver", width: 8 },
-    { header: "Бронза", key: "bronze", width: 8 },
-    { header: "Рейтинг", key: "rating", width: 10 },
-    { header: "Последнее событие", key: "lastEvent", width: 20 },
   ];
 
   const headerRow = ws.addRow(cols.map((c) => c.header));
@@ -119,7 +110,6 @@ async function buildAthletesExcel(data: ExportPayload & { type: "athletes" }) {
   for (const a of data.data) {
     ws.addRow([
       a.id, a.name, a.discipline, a.rank, a.age, a.city, a.coach, a.status,
-      a.medals.gold, a.medals.silver, a.medals.bronze, a.rating, a.lastEvent,
     ]);
   }
 

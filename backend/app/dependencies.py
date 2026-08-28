@@ -20,6 +20,7 @@ from app.repositories import (
     EventRepository,
     GroupMemberRepository,
     GroupRepository,
+    IncentiveCriteriaRepository,
     IncentiveProgramRepository,
     ParticipantRepository,
     PayoutRowRepository,
@@ -109,4 +110,7 @@ async def get_incentive_service(session: AsyncSession = Depends(get_session)) ->
         PlanItemRepository(session),
         CommissionProtocolRepository(session),
         PayoutRowRepository(session),
+        CoachRepository(session),
+        CenterRepository(session),
+        IncentiveCriteriaRepository(session),
     )
