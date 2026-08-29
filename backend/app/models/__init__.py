@@ -18,7 +18,7 @@ from app.models.incentive_criteria import IncentiveCriteria
 from app.models.incentive_program import IncentiveProgram
 from app.models.organization import Center, Region
 from app.models.report import Report, ReportSubmission, ReportTemplate
-from app.models.schedule import Schedule
+from app.models.schedule import Schedule, SchedulePeriod
 from app.models.user import Permission, Role, RolePermission, User, UserRole
 
 __all__ = [
@@ -43,6 +43,7 @@ __all__ = [
     "Group",
     "GroupMember",
     "Schedule",
+    "SchedulePeriod",
     "Attendance",
     "AttendanceQRCode",
     "Event",

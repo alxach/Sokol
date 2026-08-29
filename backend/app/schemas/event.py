@@ -1,11 +1,13 @@
 from datetime import date
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class EventCreate(BaseModel):
     name: str
     event_type: str
+    level: str | None = None
+    city: str | None = None
     center_id: str | None = None
     start_date: date
     end_date: date
@@ -16,23 +18,13 @@ class EventCreate(BaseModel):
 class EventUpdate(BaseModel):
     name: str | None = None
     event_type: str | None = None
+    level: str | None = None
+    city: str | None = None
     start_date: date | None = None
     end_date: date | None = None
     location: str | None = None
     description: str | None = None
     status: str | None = None
-
-
-class EventResponse(BaseModel):
-    id: str
-    name: str
-    event_type: str
-    center_id: str | None
-    start_date: date
-    end_date: date
-    location: str
-    description: str | None
-    status: str
 
 
 class CompetitionCreate(BaseModel):
@@ -45,17 +37,19 @@ class CompetitionCreate(BaseModel):
     max_participants: int | None = None
 
 
-class CompetitionResponse(BaseModel):
-    id: str
-    event_id: str
-    name: str
-    discipline: str
-    competition_type: str
-    status: str
+class CompetitionUpdate(BaseModel):
+    name: str | None = None
+    discipline: str | None = None
+    competition_type: str | None = None
+    status: str | None = None
 
 
 class ParticipantRegister(BaseModel):
     athlete_id: str
+
+
+class ResultUpsert(BaseModel):
+    result: str
 
 
 class ResultCreate(BaseModel):
@@ -64,3 +58,4 @@ class ResultCreate(BaseModel):
     position: int | None = None
     score: str | None = None
     medal: str | None = None
+    model_config = ConfigDict(extra="ignore")

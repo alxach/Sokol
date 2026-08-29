@@ -1,11 +1,11 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import {
-  ClipboardList, Save, Calendar, Users, UserCog,
+  ClipboardList, Calendar, Users, UserCog,
   CalendarIcon, ChevronLeft, ChevronRight,
-  Check, X, FileText,
+  Check, X, FileText, RefreshCw,
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
@@ -17,11 +17,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { useAuthGuard, useAuth } from "@/lib/auth";
 import {
-  schedules, athletes, attendanceRecords,
-  type AttendanceStatus, type Discipline,
-  freshAttendanceId, persistAttendanceRecords,
-  getGroupName,
-} from "@/lib/mock-data";
+  type AttendanceStatus,
+  type AttendanceJournalItemDto,
+  fetchAttendanceJournal,
+  fetchAttendance,
+  markAttendance,
+  updateAttendance,
+  toApiDate,
+  parseAttendanceDate,
+} from "@/lib/api/attendance.functions";
 
 export const Route = createFileRoute("/attendance")({
   head: () => ({
@@ -33,7 +37,6 @@ export const Route = createFileRoute("/attendance")({
   component: AttendancePage,
 });
 
-const DISCIPLINES: Discipline[] = ["Дзюдо", "Самбо", "Бокс", "ММА", "Борьба"];
 const dayNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const statusLabels: Record<AttendanceStatus, string> = {
   present: "Присутствует",
@@ -48,118 +51,186 @@ const statusColors: Record<AttendanceStatus, string> = {
 
 type ViewMode = "groups" | "coaches";
 
+type HistoryRecord = {
+  date: string;
+  status: AttendanceStatus;
+  discipline: string | null;
+  coach_name: string | null;
+  group_name: string | null;
+};
+
 function AttendancePage() {
   const { loading, user } = useAuthGuard();
   const { isCoach, isAdmin } = useAuth();
 
   /* ─── Coach Journal ─── */
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string>(schedules[0]?.id ?? "");
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [dirty, setDirty] = useState(false);
-  const [overrides, setOverrides] = useState<Record<string, AttendanceStatus>>({});
+  const [journalItems, setJournalItems] = useState<AttendanceJournalItemDto[]>([]);
+  const [journalLoading, setJournalLoading] = useState(false);
+  const [journalError, setJournalError] = useState<string | null>(null);
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string>("");
+  const [applying, setApplying] = useState<string | null>(null);
 
   const dateStr = format(selectedDate, "dd.MM.yyyy");
   const dateLabel = format(selectedDate, "d MMMM yyyy, EEE", { locale: ru });
+  const selectedDateISO = toApiDate(selectedDate);
 
-  const coachSchedules = useMemo(
-    () => (isCoach && user ? schedules.filter((s) => s.coachId === user.id) : schedules),
-    [isCoach, user],
-  );
-
-  const dayOfWeek = selectedDate.getDay() || 7; // 0(Вс)→7, 1(Пн)→1 … 6(Сб)→6
-
-  const daySchedules = useMemo(
-    () => coachSchedules.filter((s) => s.dayOfWeek === dayOfWeek),
-    [coachSchedules, dayOfWeek],
-  );
-
-  const selectedSchedule = useMemo(
-    () => daySchedules.find((s) => s.id === selectedScheduleId),
-    [daySchedules, selectedScheduleId],
-  );
+  const reloadJournal = useCallback(async () => {
+    setJournalLoading(true);
+    setJournalError(null);
+    try {
+      const items = await fetchAttendanceJournal(
+        selectedDateISO,
+        isCoach && user ? user.id : undefined,
+      );
+      setJournalItems(items);
+      setSelectedScheduleId((prev) =>
+        items.some((i) => i.schedule_id === prev) ? prev : (items[0]?.schedule_id ?? ""),
+      );
+    } catch (e) {
+      setJournalError(e instanceof Error ? e.message : "Не удалось загрузить журнал");
+    } finally {
+      setJournalLoading(false);
+    }
+  }, [selectedDateISO, isCoach, user]);
 
   useEffect(() => {
-    if (daySchedules.length > 0 && !daySchedules.some((s) => s.id === selectedScheduleId)) {
-      setSelectedScheduleId(daySchedules[0].id);
-      setDirty(false);
-      setOverrides({});
-    }
-  }, [dayOfWeek]);
+    void reloadJournal();
+  }, [reloadJournal]);
 
-  const groupAthletes = useMemo(() => {
-    if (!selectedSchedule) return [];
-    return athletes.filter((a) => a.coach === selectedSchedule.coachName);
-  }, [selectedSchedule]);
-
-  const athleteCountBySchedule = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const s of daySchedules) {
-      map[s.id] = athletes.filter((a) => a.coach === s.coachName).length;
-    }
-    return map;
-  }, [daySchedules]);
-
-  const existingRecords = useMemo(
-    () => attendanceRecords.filter((r) => r.scheduleId === selectedScheduleId && r.date === dateStr),
-    [selectedScheduleId, dateStr],
+  const selectedItem = useMemo(
+    () => journalItems.find((i) => i.schedule_id === selectedScheduleId) ?? null,
+    [journalItems, selectedScheduleId],
   );
 
-  const marks = useMemo(() => {
-    const m: Record<string, AttendanceStatus> = {};
-    for (const a of groupAthletes) {
-      m[a.id] = overrides[a.id] ?? existingRecords.find((r) => r.athleteId === a.id)?.status ?? "present";
+  const applyStatus = async (athleteId: string, status: AttendanceStatus) => {
+    if (!selectedItem) return;
+    const row = selectedItem.athletes.find((a) => a.athlete_id === athleteId);
+    setApplying(athleteId);
+    try {
+      let result;
+      if (row?.record_id) {
+        result = await updateAttendance(row.record_id, { status });
+      } else {
+        result = await markAttendance({
+          athlete_id: athleteId,
+          schedule_id: selectedItem.schedule_id,
+          date: selectedDateISO,
+          status,
+        });
+      }
+      setJournalItems((prev) =>
+        prev.map((item) => {
+          if (item.schedule_id !== selectedItem.schedule_id) return item;
+          return {
+            ...item,
+            athletes: item.athletes.map((a) =>
+              a.athlete_id === athleteId
+                ? { ...a, status, record_id: result.id }
+                : a,
+            ),
+          };
+        }),
+      );
+    } catch (e) {
+      setJournalError(e instanceof Error ? e.message : "Не удалось сохранить отметку");
+    } finally {
+      setApplying(null);
     }
-    return m;
-  }, [groupAthletes, existingRecords, overrides]);
+  };
+
+  const stepDay = (delta: number) => {
+    const d = new Date(selectedDate);
+    d.setDate(d.getDate() + delta);
+    setSelectedDate(d);
+  };
 
   /* ─── Admin Heatmap ─── */
   const [viewMode, setViewMode] = useState<ViewMode>("groups");
-  const [filterDateStart, setFilterDateStart] = useState("01.05.2026");
-  const [filterDateEnd, setFilterDateEnd] = useState("30.06.2026");
+  const today = new Date();
+  const startDefault = new Date(today);
+  startDefault.setDate(startDefault.getDate() - 27);
+  const [filterDateStart, setFilterDateStart] = useState(
+    format(startDefault, "dd.MM.yyyy"),
+  );
+  const [filterDateEnd, setFilterDateEnd] = useState(format(today, "dd.MM.yyyy"));
   const [filterDiscipline, setFilterDiscipline] = useState<string>("Все");
   const [filterCoach, setFilterCoach] = useState<string>("Все");
   const [filterGroup, setFilterGroup] = useState<string>("Все");
+  const [records, setRecords] = useState<HistoryRecord[]>([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState<string | null>(null);
 
-  const uniqueCoaches = [...new Set(schedules.map((s) => s.coachName))];
-  const uniqueGroups = [...new Set(schedules.map((s) => s.groupId))];
+  useEffect(() => {
+    const startISO = toApiDate(filterDateStart);
+    const endISO = toApiDate(filterDateEnd);
+    if (!startISO || !endISO) return;
+    setRecordsLoading(true);
+    setRecordsError(null);
+    fetchAttendance({ dateFrom: startISO, dateTo: endISO, perPage: 2000 })
+      .then((res) => {
+        setRecords(
+          res.items.map((r) => ({
+            date: r.date,
+            status: r.status,
+            discipline: r.discipline,
+            coach_name: r.coach_name,
+            group_name: r.group_name,
+          })),
+        );
+      })
+      .catch((e) =>
+        setRecordsError(e instanceof Error ? e.message : "Не удалось загрузить данные"),
+      )
+      .finally(() => setRecordsLoading(false));
+  }, [filterDateStart, filterDateEnd]);
 
-  const filteredSchedules = useMemo(() => {
-    let list = schedules;
-    if (filterDiscipline !== "Все") list = list.filter((s) => s.discipline === filterDiscipline);
-    if (filterCoach !== "Все") list = list.filter((s) => s.coachName === filterCoach);
-    if (filterGroup !== "Все") list = list.filter((s) => s.groupId === filterGroup);
-    return list;
-  }, [filterDiscipline, filterCoach, filterGroup]);
+  const disciplineOptions = useMemo(
+    () => [...new Set(records.map((r) => r.discipline).filter((v): v is string => Boolean(v)))].sort(),
+    [records],
+  );
+  const coachOptions = useMemo(
+    () => [...new Set(records.map((r) => r.coach_name).filter((v): v is string => Boolean(v)))].sort(),
+    [records],
+  );
+  const groupOptions = useMemo(
+    () => [...new Set(records.map((r) => r.group_name).filter((v): v is string => Boolean(v)))].sort(),
+    [records],
+  );
+
+  const filteredRecords = useMemo(() => {
+    return records.filter((r) => {
+      if (filterDiscipline !== "Все" && r.discipline !== filterDiscipline) return false;
+      if (filterCoach !== "Все" && r.coach_name !== filterCoach) return false;
+      if (filterGroup !== "Все" && r.group_name !== filterGroup) return false;
+      return true;
+    });
+  }, [records, filterDiscipline, filterCoach, filterGroup]);
 
   const heatmapData = useMemo(() => {
-    const filteredIds = new Set(filteredSchedules.map((s) => s.id));
-
     const rows = viewMode === "groups"
-      ? [...new Set(filteredSchedules.map((s) => s.groupId))]
-      : [...new Set(filteredSchedules.map((s) => s.coachName))];
+      ? [...new Set(filteredRecords.map((r) => r.group_name).filter((v): v is string => Boolean(v)))]
+      : [...new Set(filteredRecords.map((r) => r.coach_name).filter((v): v is string => Boolean(v)))];
 
     return rows.map((label) => {
-      const rowSchedules = viewMode === "groups"
-        ? filteredSchedules.filter((s) => s.groupId === label)
-        : filteredSchedules.filter((s) => s.coachName === label);
+      const rowRecords = viewMode === "groups"
+        ? filteredRecords.filter((r) => r.group_name === label)
+        : filteredRecords.filter((r) => r.coach_name === label);
 
-      const days = dayNames.map((_, di) => {
-        const dow = di + 1;
-        const daySchedules = rowSchedules.filter((s) => s.dayOfWeek === dow);
-        if (daySchedules.length === 0) return { label: dayNames[di], pct: null };
-
-        const dayIds = new Set(daySchedules.map((s) => s.id));
-        const records = attendanceRecords.filter(
-          (r) => dayIds.has(r.scheduleId) && r.date >= filterDateStart && r.date <= filterDateEnd,
-        );
-        const total = records.length;
-        const present = records.filter((r) => r.status === "present").length;
-        return { label: dayNames[di], pct: total > 0 ? Math.round((present / total) * 100) : null };
+      const days = dayNames.map((dayLabel, di) => {
+        const dowRecords = rowRecords.filter((r) => {
+          const d = parseAttendanceDate(r.date);
+          return d ? (d.getDay() + 6) % 7 === di : false;
+        });
+        if (dowRecords.length === 0) return { label: dayLabel, pct: null };
+        const total = dowRecords.length;
+        const present = dowRecords.filter((r) => r.status === "present").length;
+        return { label: dayLabel, pct: Math.round((present / total) * 100) };
       });
 
-      return { label, days, discipline: rowSchedules[0]?.discipline ?? "" };
+      return { label, days, discipline: rowRecords[0]?.discipline ?? "" };
     });
-  }, [viewMode, filteredSchedules, filterDateStart, filterDateEnd]);
+  }, [viewMode, filteredRecords]);
 
   const heatColor = (pct: number | null) => {
     if (pct === null) return "bg-muted/30";
@@ -168,58 +239,6 @@ function AttendancePage() {
     if (pct >= 60) return "bg-accent/20 text-accent-foreground";
     if (pct >= 40) return "bg-destructive/15 text-destructive";
     return "bg-destructive/25 text-destructive";
-  };
-
-  /* ─── Shared ─── */
-
-  const switchSchedule = (scheduleId: string) => {
-    setSelectedScheduleId(scheduleId);
-    setDirty(false);
-    setOverrides({});
-  };
-
-  const handleMark = (athleteId: string, status: AttendanceStatus) => {
-    setOverrides((prev) => ({ ...prev, [athleteId]: status }));
-    setDirty(true);
-  };
-
-  const handleSave = () => {
-    for (const a of groupAthletes) {
-      const status = marks[a.id];
-      const existing = existingRecords.find((r) => r.athleteId === a.id);
-      if (existing) {
-        existing.status = status;
-      } else {
-        attendanceRecords.push({
-          id: freshAttendanceId(),
-          scheduleId: selectedScheduleId,
-          date: dateStr,
-          athleteId: a.id,
-          athleteName: a.name,
-          status,
-          markedByCoachId: user?.id ?? "",
-        });
-      }
-    }
-    persistAttendanceRecords();
-    setDirty(false);
-    setOverrides({});
-  };
-
-  const goPrevDay = () => {
-    const d = new Date(selectedDate);
-    d.setDate(d.getDate() - 1);
-    setSelectedDate(d);
-    setDirty(false);
-    setOverrides({});
-  };
-
-  const goNextDay = () => {
-    const d = new Date(selectedDate);
-    d.setDate(d.getDate() + 1);
-    setSelectedDate(d);
-    setDirty(false);
-    setOverrides({});
   };
 
   if (loading) {
@@ -283,7 +302,7 @@ function AttendancePage() {
               className="h-9 rounded-lg border border-border bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               <option value="Все">Все</option>
-              {DISCIPLINES.map((d) => <option key={d} value={d}>{d}</option>)}
+              {disciplineOptions.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </div>
           <div>
@@ -294,7 +313,7 @@ function AttendancePage() {
               className="h-9 rounded-lg border border-border bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               <option value="Все">Все</option>
-              {uniqueCoaches.map((c) => <option key={c} value={c}>{c}</option>)}
+              {coachOptions.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
@@ -305,10 +324,21 @@ function AttendancePage() {
               className="h-9 rounded-lg border border-border bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               <option value="Все">Все</option>
-              {uniqueGroups.map((g) => <option key={g} value={g}>{getGroupName(g)}</option>)}
+              {groupOptions.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
           </div>
         </div>
+
+        {recordsLoading && (
+          <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+            <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Загрузка данных…
+          </div>
+        )}
+        {recordsError && (
+          <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
+            {recordsError}
+          </div>
+        )}
 
         {/* Legend */}
         <div className="mb-4 flex items-center gap-4 text-xs text-muted-foreground">
@@ -339,7 +369,7 @@ function AttendancePage() {
                 {heatmapData.map((row) => (
                   <tr key={row.label} className="transition hover:bg-muted/20">
                     <td className="whitespace-nowrap px-4 py-3">
-                      <span className="font-medium text-secondary">{viewMode === "groups" ? getGroupName(row.label) : row.label}</span>
+                      <span className="font-medium text-secondary">{row.label}</span>
                       <span className="ml-2 text-[10px] text-muted-foreground">{row.discipline}</span>
                     </td>
                     {row.days.map((day) => (
@@ -368,25 +398,60 @@ function AttendancePage() {
 
   /* ─── Coach Journal Render ─── */
 
+  const markedRows = selectedItem ? selectedItem.athletes.filter((a) => a.status !== null) : [];
+  const presentCount = markedRows.filter((a) => a.status === "present").length;
+  const absentCount = markedRows.filter((a) => a.status === "absent").length;
+  const excusedCount = markedRows.filter((a) => a.status === "excused").length;
+
   return (
     <AppShell title="Посещаемость" subtitle="Журнал отметок">
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="font-display text-2xl font-bold text-secondary">Журнал посещаемости</h2>
           <p className="text-sm text-muted-foreground">
-            {daySchedules.length} занятий в расписании · {groupAthletes.length} спортсменов
+            {journalItems.length} занятий в расписании · {selectedItem ? selectedItem.athletes.length : 0} спортсменов
           </p>
         </div>
-        {dirty && (
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={handleSave}>
-            <Save className="mr-2 h-4 w-4" /> Сохранить
-          </Button>
+        {journalError && (
+          <span className="text-xs text-destructive">{journalError}</span>
         )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card className="shadow-[var(--shadow-card)]">
-          {!selectedSchedule ? (
+          <div className="flex items-center gap-2 border-b border-border px-5 py-3">
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => stepDay(-1)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-normal">
+                  <CalendarIcon className="h-3.5 w-3.5" />
+                  {dateLabel}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <CalendarPicker
+                  mode="single"
+                  locale={ru}
+                  selected={selectedDate}
+                  onSelect={(d) => { if (d) setSelectedDate(d); }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => stepDay(1)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            {journalItems.length > 0 && (
+              <span className="ml-auto text-xs text-muted-foreground">{dateLabel}</span>
+            )}
+          </div>
+          {journalLoading ? (
+            <div className="flex h-48 items-center justify-center gap-2 text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin" /> Загрузка журнала…
+            </div>
+          ) : !selectedItem ? (
             <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
               Нет занятий в расписании
             </div>
@@ -395,41 +460,18 @@ function AttendancePage() {
               <div className="border-b border-border px-5 py-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-display text-lg font-bold text-secondary">{getGroupName(selectedSchedule.groupId)}</h3>
+                    <h3 className="font-display text-lg font-bold text-secondary">{selectedItem.group_name}</h3>
                     <p className="text-sm text-muted-foreground">
-                      {selectedSchedule.discipline} · {selectedSchedule.timeStart}–{selectedSchedule.timeEnd} · {selectedSchedule.room}
+                      {[selectedItem.discipline, selectedItem.coach_name ? `тренер: ${selectedItem.coach_name}` : ""]
+                        .filter(Boolean)
+                        .join(" · ")}{" · "}
+                      {selectedItem.start_time}–{selectedItem.end_time}
+                      {selectedItem.room ? ` · ${selectedItem.room}` : ""}
                     </p>
                   </div>
                   <Badge variant="outline" className="border-primary/30 bg-primary/5 font-normal text-primary">
                     {dateStr}
                   </Badge>
-                </div>
-
-                {/* Date navigator */}
-                <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
-                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={goPrevDay}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-normal">
-                        <CalendarIcon className="h-3.5 w-3.5" />
-                        {dateLabel}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <CalendarPicker
-                        mode="single"
-                        locale={ru}
-                        selected={selectedDate}
-                        onSelect={(d) => { if (d) { setSelectedDate(d); setDirty(false); setOverrides({}); } }}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={goNextDay}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
                 </div>
               </div>
 
@@ -445,45 +487,50 @@ function AttendancePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {groupAthletes.map((a, i) => (
-                      <tr key={a.id} className="transition hover:bg-muted/20">
-                        <td className="px-4 py-3 text-xs text-muted-foreground">{i + 1}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-secondary text-[10px] font-bold text-primary-foreground">
-                              {a.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                    {selectedItem.athletes.map((a, i) => {
+                      const current = a.status ?? "present";
+                      const isApplying = applying === a.athlete_id;
+                      return (
+                        <tr key={a.athlete_id} className="transition hover:bg-muted/20">
+                          <td className="px-4 py-3 text-xs text-muted-foreground">{i + 1}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-secondary text-[10px] font-bold text-primary-foreground">
+                                {a.athlete_name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                              </div>
+                              <span className="font-medium text-secondary">{a.athlete_name}</span>
                             </div>
-                            <span className="font-medium text-secondary">{a.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">{a.rank}</td>
-                        <td className="px-4 py-3">
-                          <Badge variant="outline" className={`font-normal ${statusColors[marks[a.id] ?? "present"]}`}>
-                            {statusLabels[marks[a.id] ?? "present"]}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-1.5">
-                            {(["present", "absent", "excused"] as AttendanceStatus[]).map((s) => (
-                              <button
-                                key={s}
-                                onClick={() => handleMark(a.id, s)}
-                                className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${
-                                  marks[a.id] === s
-                                    ? s === "present" ? "border-[color:var(--success)] bg-[color:var(--success)]/10 text-[color:var(--success)]"
-                                      : s === "absent" ? "border-destructive bg-destructive/10 text-destructive"
-                                      : "border-border bg-muted text-muted-foreground"
-                                    : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
-                                }`}
-                              >
-                                {s === "present" ? <Check className="h-3.5 w-3.5" /> : s === "absent" ? <X className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
-                              </button>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {groupAthletes.length === 0 && (
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground">{a.rank || "—"}</td>
+                          <td className="px-4 py-3">
+                            <Badge variant="outline" className={`font-normal ${statusColors[current]}`}>
+                              {statusLabels[current]}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-1.5">
+                              {(["present", "absent", "excused"] as AttendanceStatus[]).map((s) => (
+                                <button
+                                  key={s}
+                                  disabled={isApplying}
+                                  onClick={() => void applyStatus(a.athlete_id, s)}
+                                  className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${
+                                    current === s
+                                      ? s === "present" ? "border-[color:var(--success)] bg-[color:var(--success)]/10 text-[color:var(--success)]"
+                                        : s === "absent" ? "border-destructive bg-destructive/10 text-destructive"
+                                        : "border-border bg-muted text-muted-foreground"
+                                      : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                                  }`}
+                                >
+                                  {s === "present" ? <Check className="h-3.5 w-3.5" /> : s === "absent" ? <X className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+                                </button>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {selectedItem.athletes.length === 0 && (
                       <tr>
                         <td colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
                           Нет спортсменов в этой группе
@@ -509,53 +556,48 @@ function AttendancePage() {
               </div>
             </div>
             <div className="space-y-1 p-3">
-              {daySchedules.map((s) => {
-                const isSelected = s.id === selectedScheduleId;
-                const recordsOnDate = attendanceRecords.filter(
-                  (r) => r.scheduleId === s.id && r.date === dateStr,
-                );
-                const athleteCount = athleteCountBySchedule[s.id] ?? 0;
-                const markedAll = recordsOnDate.length > 0 && recordsOnDate.length >= athleteCount;
-                const markedPartial = recordsOnDate.length > 0 && recordsOnDate.length < athleteCount;
-                const markBorder = !isSelected
-                  ? markedAll ? "border-l-green-500"
-                    : markedPartial ? "border-l-yellow-500"
-                    : ""
-                  : "";
+              {journalItems.map((item) => {
+                const isSelected = item.schedule_id === selectedScheduleId;
+                const marked = item.athletes.filter((a) => a.status !== null);
+                const allMarked = marked.length === item.athletes.length && item.athletes.length > 0;
+                const someMarked = marked.length > 0 && marked.length < item.athletes.length;
+                const present = marked.filter((a) => a.status === "present").length;
                 return (
                   <button
-                    key={s.id}
-                    onClick={() => switchSchedule(s.id)}
+                    key={item.schedule_id}
+                    onClick={() => setSelectedScheduleId(item.schedule_id)}
                     className={`w-full rounded-lg border p-3 text-left text-sm transition ${
                       isSelected
                         ? "border-primary bg-primary/5"
-                        : `border-border hover:border-primary/30 hover:bg-muted/30 ${markBorder}`
+                        : `border-border hover:border-primary/30 hover:bg-muted/30 ${
+                            allMarked ? "border-l-green-500" : someMarked ? "border-l-yellow-500" : ""
+                          }`
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className={`font-medium ${isSelected ? "text-primary" : "text-secondary"}`}>
-                        {getGroupName(s.groupId)}
+                        {item.group_name}
                       </span>
-                      {recordsOnDate.length > 0 && (
+                      {marked.length > 0 && (
                         <span className="text-[10px] text-muted-foreground">
-                          {recordsOnDate.filter((r) => r.status === "present").length}/{recordsOnDate.length}
+                          {present}/{marked.length}
                         </span>
                       )}
                     </div>
                     <div className="mt-0.5 text-[11px] text-muted-foreground">
-                      {dayNames[s.dayOfWeek - 1]} · {s.timeStart}–{s.timeEnd}
+                      {item.start_time}–{item.end_time}
                     </div>
-                    <div className="text-[11px] text-muted-foreground">{s.room}</div>
+                    <div className="text-[11px] text-muted-foreground">{item.room || ""}</div>
                   </button>
                 );
               })}
-              {daySchedules.length === 0 && (
+              {journalItems.length === 0 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">Нет занятий</p>
               )}
             </div>
           </Card>
 
-          {selectedSchedule && (
+          {selectedItem && (
             <Card className="shadow-[var(--shadow-card)]">
               <div className="border-b border-border px-5 py-3">
                 <h4 className="flex items-center gap-2 text-sm font-bold text-secondary">
@@ -565,29 +607,23 @@ function AttendancePage() {
               <div className="space-y-3 p-4 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Присутствует</span>
-                  <span className="font-medium text-[color:var(--success)]">
-                    {Object.values(marks).filter((s) => s === "present").length}
-                  </span>
+                  <span className="font-medium text-[color:var(--success)]">{presentCount}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Отсутствует</span>
-                  <span className="font-medium text-destructive">
-                    {Object.values(marks).filter((s) => s === "absent").length}
-                  </span>
+                  <span className="font-medium text-destructive">{absentCount}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Уважительная</span>
-                  <span className="font-medium text-muted-foreground">
-                    {Object.values(marks).filter((s) => s === "excused").length}
-                  </span>
+                  <span className="font-medium text-muted-foreground">{excusedCount}</span>
                 </div>
                 <div className="border-t border-border pt-2">
                   <div className="flex items-center justify-between font-medium text-secondary">
                     <span>Посещаемость</span>
                     <span className="font-display text-lg font-bold text-primary">
-                      {groupAthletes.length > 0
+                      {selectedItem.athletes.length > 0
                         ? Math.round(
-                            (Object.values(marks).filter((s) => s !== "absent").length / groupAthletes.length) * 100,
+                            (selectedItem.athletes.filter((a) => a.status !== "absent" && a.status !== null).length / selectedItem.athletes.length) * 100,
                           )
                         : 0}%
                     </span>

@@ -30,6 +30,7 @@ from app.repositories import (
     ReportSubmissionRepository,
     ReportTemplateRepository,
     ResultRepository,
+    SchedulePeriodRepository,
     ScheduleRepository,
 )
 from app.services.athlete_service import AthleteService
@@ -69,11 +70,15 @@ async def get_group_service(session: AsyncSession = Depends(get_session)) -> Gro
 
 
 async def get_schedule_service(session: AsyncSession = Depends(get_session)) -> ScheduleService:
-    return ScheduleService(ScheduleRepository(session))
+    return ScheduleService(ScheduleRepository(session), SchedulePeriodRepository(session))
 
 
 async def get_attendance_service(session: AsyncSession = Depends(get_session)) -> AttendanceService:
-    return AttendanceService(AttendanceRepository(session))
+    return AttendanceService(
+        AttendanceRepository(session),
+        ScheduleRepository(session),
+        SchedulePeriodRepository(session),
+    )
 
 
 async def get_event_service(session: AsyncSession = Depends(get_session)) -> EventService:

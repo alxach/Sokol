@@ -52,3 +52,11 @@ class BaseRepository[T]:
         stmt = delete(self.model).where(self.model.id == id)
         result = await self.session.execute(stmt)
         return result.rowcount > 0
+
+    async def delete_by(self, **filters) -> bool:
+        stmt = delete(self.model)
+        for attr, value in filters.items():
+            if value is not None:
+                stmt = stmt.where(getattr(self.model, attr) == value)
+        result = await self.session.execute(stmt)
+        return result.rowcount > 0

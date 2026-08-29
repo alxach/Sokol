@@ -10,6 +10,7 @@ __all__ = [
     "GroupRepository",
     "GroupMemberRepository",
     "ScheduleRepository",
+    "SchedulePeriodRepository",
     "AttendanceRepository",
     "EventRepository",
     "CompetitionRepository",
@@ -64,4 +65,4 @@ from app.repositories.report_repo import (
     ReportSubmissionRepository,
     ReportTemplateRepository,
 )
-from app.repositories.schedule_repo import ScheduleRepository
+from app.repositories.schedule_repo import SchedulePeriodRepository, ScheduleRepository

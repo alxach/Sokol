@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -14,9 +14,12 @@ import { Calendar } from "@/components/ui/calendar";
 import { MiniStat } from "@/components/mini-stat";
 import { useAuth, useAuthGuard } from "@/lib/auth";
 import {
-  competitions, athletes, type Competition, type CompetitionAthlete, type CompetitionResult, type Discipline, type EventLevel, type EventStatus,
-  freshCompetitionId, persistCompetitions,
-} from "@/lib/mock-data";
+  fetchCompetitions, createCompetition, updateCompetition, deleteCompetitionEvent,
+  cancelCompetition, addCompetitionParticipant, removeCompetitionParticipant,
+  setCompetitionResult, clearCompetitionResult, isoDate, parseDate,
+  type CompetitionDto, type CompetitionParticipantDto, type CompetitionChildDto,
+} from "@/lib/api/events.functions";
+import { fetchAthletes, athleteFullName, type AthleteDto } from "@/lib/api/athletes.functions";
 
 export const Route = createFileRoute("/competitions")({
   head: () => ({
@@ -35,134 +38,202 @@ const statusFilters = [
   { value: "cancelled", label: "Отменённые" },
 ] as const;
 
-const levelColor: Record<EventLevel, string> = {
+const levelColor: Record<string, string> = {
   "Муниципальный": "bg-primary/10 text-primary border-primary/30",
   "Региональный": "bg-secondary/10 text-secondary border-secondary/30",
   "Федеральный": "bg-accent/15 text-accent-foreground border-accent/30",
   "Международный": "bg-[color:var(--success)]/15 text-[color:var(--success)] border-[color:var(--success)]/30",
 };
 
-const resultOrder: CompetitionResult[] = ["1 место", "2 место", "3 место", "5-6 место", "Без места"];
+const resultOrder = ["1 место", "2 место", "3 место", "5-6 место", "Без места"];
 
-function resultCount(athletes: CompetitionAthlete[], result: CompetitionResult) {
+function effectiveStatus(c: CompetitionDto): "upcoming" | "past" | "cancelled" {
+  if (c.status === "cancelled") return "cancelled";
+  const end = parseDate(c.end_date);
+  if (end) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    if (end < today) return "past";
+  }
+  return "upcoming";
+}
+
+function fmtDate(iso: string): string {
+  const d = parseDate(iso);
+  return d ? format(d, "d MMMM yyyy", { locale: ru }) : iso;
+}
+
+function primaryCompetition(c: CompetitionDto): CompetitionChildDto | null {
+  return c.competitions[0] ?? null;
+}
+
+function competitionAthletes(c: CompetitionDto): CompetitionParticipantDto[] {
+  return primaryCompetition(c)?.participants ?? [];
+}
+
+function resultCount(athletes: CompetitionParticipantDto[], result: string) {
   return athletes.filter((a) => a.result === result).length;
 }
 
 function CompetitionsPage() {
   const { loading } = useAuthGuard();
   const { user, isAdmin, isCoach } = useAuth();
-  const [, forceUpdate] = useState(0);
-  const rerender = () => forceUpdate((n) => n + 1);
+  const [items, setItems] = useState<CompetitionDto[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [itemsError, setItemsError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("Все");
   const [resultFilter, setResultFilter] = useState<string>("all");
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [editingAthletes, setEditingAthletes] = useState<Competition | null>(null);
-  const [editingDetails, setEditingDetails] = useState<Competition | null>(null);
+  const [editingAthletes, setEditingAthletes] = useState<CompetitionDto | null>(null);
+  const [editingDetails, setEditingDetails] = useState<CompetitionDto | null>(null);
 
-  const coachName = user?.coachName ?? "";
   const coachId = user?.id ?? "";
+  const coachName = user?.coachName ?? "";
+
+  const load = useCallback(async () => {
+    try {
+      const data = await fetchCompetitions();
+      setItems(data);
+      setItemsError(null);
+    } catch (err) {
+      setItemsError(err instanceof Error ? err.message : "Не удалось загрузить соревнования");
+    } finally {
+      setDataLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const visible = useMemo(() => {
-    let list = competitions;
-    if (isCoach) list = list.filter((c) => c.coachId === coachId);
-    return list;
-  }, [isCoach, coachId]);
+    if (isCoach) return items.filter((c) => c.coach_id === coachId);
+    return items;
+  }, [items, isCoach, coachId]);
 
   const filtered = useMemo(() => {
     return visible.filter((c) => {
       const q = query.trim().toLowerCase();
-      const matchQ = !q || c.title.toLowerCase().includes(q) || c.city.toLowerCase().includes(q) || c.id.toLowerCase().includes(q);
-      const matchS = statusFilter === "Все" || c.status === statusFilter;
+      const matchQ = !q || c.name.toLowerCase().includes(q) || (c.city ?? "").toLowerCase().includes(q);
+      const st = effectiveStatus(c);
+      const matchS = statusFilter === "Все" || st === statusFilter;
+      const ath = competitionAthletes(c);
       const matchR = resultFilter === "all"
-        || (resultFilter === "with_result" && c.athletes.some((a) => a.result && a.result !== "Без места"))
-        || (resultFilter === "without_result" && !c.athletes.some((a) => a.result && a.result !== "Без места"));
+        || (resultFilter === "with_result" && ath.some((a) => a.result && a.result !== "Без места"))
+        || (resultFilter === "without_result" && !ath.some((a) => a.result && a.result !== "Без места"));
       return matchQ && matchS && matchR;
     });
   }, [visible, query, statusFilter, resultFilter]);
 
-  const upcoming = useMemo(() => filtered.filter((c) => c.status === "upcoming"), [filtered]);
-  const past = useMemo(() => filtered.filter((c) => c.status === "past"), [filtered]);
-  const cancelled = useMemo(() => filtered.filter((c) => c.status === "cancelled"), [filtered]);
+  const upcoming = useMemo(() => filtered.filter((c) => effectiveStatus(c) === "upcoming"), [filtered]);
+  const past = useMemo(() => filtered.filter((c) => effectiveStatus(c) === "past"), [filtered]);
+  const cancelled = useMemo(() => filtered.filter((c) => effectiveStatus(c) === "cancelled"), [filtered]);
 
   const totals = useMemo(() => {
-    const totalAthletes = new Set(filtered.flatMap((c) => c.athletes.map((a) => a.athleteId))).size;
-    const first = filtered.reduce((s, c) => s + resultCount(c.athletes, "1 место"), 0);
-    const withResult = filtered.reduce((s, c) => s + c.athletes.filter((a) => a.result && a.result !== "Без места").length, 0);
+    const totalAthletes = new Set(filtered.flatMap((c) => competitionAthletes(c).map((a) => a.athlete_id))).size;
+    const first = filtered.reduce((s, c) => s + resultCount(competitionAthletes(c), "1 место"), 0);
+    const withResult = filtered.reduce(
+      (s, c) => s + competitionAthletes(c).filter((a) => a.result && a.result !== "Без места").length, 0,
+    );
     return { total: filtered.length, totalAthletes, first, withResult };
   }, [filtered]);
 
-  const handleCreate = (data: CreateCompetitionData) => {
-    const newComp: Competition = {
-      id: freshCompetitionId(),
-      coachId,
-      coachName,
-      title: data.title,
-      discipline: data.discipline,
-      level: data.level,
-      date: data.date,
-      dateEnd: data.dateEnd || undefined,
-      city: data.city,
-      location: data.location || undefined,
-      status: "upcoming",
-      athletes: [],
-    };
-    competitions.push(newComp);
-    persistCompetitions();
-    rerender();
-    setShowCreateForm(false);
+  const handleCreate = async (data: CreateCompetitionData) => {
+    try {
+      await createCompetition({
+        name: data.title,
+        discipline: data.discipline,
+        level: data.level,
+        city: data.city,
+        location: data.location,
+        start_date: isoDate(parseDate(data.date) ?? new Date()),
+        end_date: isoDate(parseDate(data.dateEnd ?? data.date) ?? new Date()),
+      });
+      setShowCreateForm(false);
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Не удалось создать соревнование");
+    }
   };
 
-  const handleUpdate = (id: string, data: CreateCompetitionData) => {
-    const comp = competitions.find((c) => c.id === id);
-    if (!comp) return;
-    comp.title = data.title;
-    comp.discipline = data.discipline;
-    comp.level = data.level;
-    comp.date = data.date;
-    comp.dateEnd = data.dateEnd || undefined;
-    comp.city = data.city;
-    comp.location = data.location || undefined;
-    if (data.status) comp.status = data.status;
-    persistCompetitions();
-    rerender();
-    setEditingDetails(null);
+  const compOf = (c: CompetitionDto) => primaryCompetition(c);
+
+  const handleUpdate = async (c: CompetitionDto, data: CreateCompetitionData) => {
+    const comp = compOf(c);
+    try {
+      await updateCompetition(c.id, comp?.id ?? "", {
+        name: data.title,
+        discipline: data.discipline,
+        level: data.level,
+        city: data.city,
+        location: data.location,
+        start_date: isoDate(parseDate(data.date) ?? new Date()),
+        end_date: isoDate(parseDate(data.dateEnd ?? data.date) ?? new Date()),
+      });
+      setEditingDetails(null);
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Не удалось обновить соревнование");
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (c: CompetitionDto) => {
     if (!confirm("Удалить соревнование?")) return;
-    const idx = competitions.findIndex((c) => c.id === id);
-    if (idx !== -1) competitions.splice(idx, 1);
-    persistCompetitions();
-    rerender();
+    try {
+      await deleteCompetitionEvent(c.id);
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Не удалось удалить соревнование");
+    }
   };
 
-  const handleCancel = (id: string) => {
+  const handleCancel = async (c: CompetitionDto) => {
     if (!confirm("Отменить соревнование?")) return;
-    const comp = competitions.find((c) => c.id === id);
-    if (comp) comp.status = "cancelled";
-    persistCompetitions();
-    rerender();
+    try {
+      await cancelCompetition(c.id);
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Не удалось отменить соревнование");
+    }
   };
 
-  const handleAddAthlete = (comp: Competition, athleteId: string, athleteName: string) => {
-    if (comp.athletes.some((a) => a.athleteId === athleteId)) return;
-    comp.athletes.push({ athleteId, athleteName });
-    persistCompetitions();
-    rerender();
+  const handleAddAthlete = async (c: CompetitionDto, athlete: AthleteDto) => {
+    const comp = compOf(c);
+    if (!comp) return;
+    try {
+      await addCompetitionParticipant(comp.id, athlete.id);
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Не удалось добавить спортсмена");
+    }
   };
 
-  const handleRemoveAthlete = (comp: Competition, athleteId: string) => {
-    comp.athletes = comp.athletes.filter((a) => a.athleteId !== athleteId);
-    persistCompetitions();
-    rerender();
+  const handleRemoveAthlete = async (c: CompetitionDto, athleteId: string) => {
+    const comp = compOf(c);
+    if (!comp) return;
+    try {
+      await removeCompetitionParticipant(comp.id, athleteId);
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Не удалось удалить спортсмена");
+    }
   };
 
-  const handleSetResult = (comp: Competition, athleteId: string, result: CompetitionResult | undefined) => {
-    const found = comp.athletes.find((a) => a.athleteId === athleteId);
-    if (found) found.result = result;
-    persistCompetitions();
-    rerender();
+  const handleSetResult = async (c: CompetitionDto, athleteId: string, result: string | null) => {
+    const comp = compOf(c);
+    if (!comp) return;
+    try {
+      if (result) {
+        await setCompetitionResult(comp.id, athleteId, result);
+      } else {
+        await clearCompetitionResult(comp.id, athleteId);
+      }
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Не удалось сохранить результат");
+    }
   };
 
   if (loading) {
@@ -179,7 +250,7 @@ function CompetitionsPage() {
         <div>
           <h2 className="font-display text-2xl font-bold text-secondary">Календарь соревнований</h2>
           <p className="text-sm text-muted-foreground">
-            {upcoming.length} предстоящих · {past.length} прошедших · {totals.totalAthletes} участников от ЦСЕ
+            {dataLoading ? "Загрузка…" : `${upcoming.length} предстоящих · ${past.length} прошедших · ${totals.totalAthletes} участников от ЦСЕ`}
           </p>
         </div>
         <div className="flex gap-2">
@@ -188,6 +259,12 @@ function CompetitionsPage() {
           </Button>
         </div>
       </div>
+
+      {itemsError && (
+        <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {itemsError}
+        </div>
+      )}
 
       <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MiniStat label="Всего в календаре" value={totals.total.toString()} accent="primary" icon={<Trophy className="h-4 w-4" />} />
@@ -246,7 +323,11 @@ function CompetitionsPage() {
         </div>
 
         <div className="divide-y divide-border">
-          {filtered.length === 0 && (
+          {dataLoading && (
+            <div className="py-12 text-center text-sm text-muted-foreground">Загрузка соревнований…</div>
+          )}
+
+          {!dataLoading && filtered.length === 0 && (
             <div className="py-12 text-center text-sm text-muted-foreground">
               Ничего не найдено по выбранным фильтрам.
             </div>
@@ -264,8 +345,8 @@ function CompetitionsPage() {
                     event={ev}
                     onEditAthletes={isCoach ? () => setEditingAthletes(ev) : undefined}
                     onEditDetails={isCoach ? () => setEditingDetails(ev) : undefined}
-                    onDelete={isCoach ? () => handleDelete(ev.id) : undefined}
-                    onCancel={isCoach && ev.status !== "cancelled" ? () => handleCancel(ev.id) : undefined}
+                    onDelete={isCoach ? () => handleDelete(ev) : undefined}
+                    onCancel={isCoach && ev.status !== "cancelled" ? () => handleCancel(ev) : undefined}
                   />
                 ))}
               </div>
@@ -284,7 +365,7 @@ function CompetitionsPage() {
                     event={ev}
                     onEditAthletes={isCoach ? () => setEditingAthletes(ev) : undefined}
                     onEditDetails={isCoach ? () => setEditingDetails(ev) : undefined}
-                    onDelete={isCoach ? () => handleDelete(ev.id) : undefined}
+                    onDelete={isCoach ? () => handleDelete(ev) : undefined}
                   />
                 ))}
               </div>
@@ -303,7 +384,7 @@ function CompetitionsPage() {
                     event={ev}
                     onEditAthletes={isCoach ? () => setEditingAthletes(ev) : undefined}
                     onEditDetails={isCoach ? () => setEditingDetails(ev) : undefined}
-                    onDelete={isCoach ? () => handleDelete(ev.id) : undefined}
+                    onDelete={isCoach ? () => handleDelete(ev) : undefined}
                   />
                 ))}
               </div>
@@ -314,7 +395,7 @@ function CompetitionsPage() {
 
       {showCreateForm && (
         <CompetitionFormModal
-          defaultDiscipline={(user?.coachDiscipline ?? "Бокс") as Discipline}
+          defaultDiscipline="Бокс"
           onSave={handleCreate}
           onClose={() => setShowCreateForm(false)}
         />
@@ -323,7 +404,7 @@ function CompetitionsPage() {
       {editingDetails && (
         <CompetitionFormModal
           competition={editingDetails}
-          onSave={(data) => handleUpdate(editingDetails.id, data)}
+          onSave={(data) => handleUpdate(editingDetails, data)}
           onClose={() => setEditingDetails(null)}
         />
       )}
@@ -343,19 +424,25 @@ function CompetitionsPage() {
 }
 
 function EventCard({ event, onEditAthletes, onEditDetails, onDelete, onCancel }: {
-  event: Competition;
+  event: CompetitionDto;
   onEditAthletes?: () => void;
   onEditDetails?: () => void;
   onDelete?: () => void;
   onCancel?: () => void;
 }) {
-  const athleteCount = event.athletes.length;
-  const first = resultCount(event.athletes, "1 место");
-  const second = resultCount(event.athletes, "2 место");
-  const third = resultCount(event.athletes, "3 место");
-  const places56 = resultCount(event.athletes, "5-6 место");
-  const noResult = resultCount(event.athletes, "Без места");
+  const comp = primaryCompetition(event);
+  const athletes = competitionAthletes(event);
+  const athleteCount = athletes.length;
+  const discipline = comp?.discipline ?? "—";
+  const first = resultCount(athletes, "1 место");
+  const second = resultCount(athletes, "2 место");
+  const third = resultCount(athletes, "3 место");
+  const places56 = resultCount(athletes, "5-6 место");
   const hasResults = first > 0 || second > 0 || third > 0 || places56 > 0;
+  const st = effectiveStatus(event);
+  const title = event.name;
+  const city = event.city ?? "";
+  const level = event.level ?? "Муниципальный";
 
   return (
     <Card className={`group border-border p-4 shadow-[var(--shadow-card)] transition hover:shadow-md ${
@@ -365,7 +452,7 @@ function EventCard({ event, onEditAthletes, onEditDetails, onDelete, onCancel }:
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <div className="truncate font-display text-sm font-bold text-secondary">
-              {event.title}
+              {title}
             </div>
             {event.status === "cancelled" && (
               <Badge variant="outline" className="shrink-0 border-destructive/30 bg-destructive/10 font-normal text-destructive">
@@ -375,21 +462,22 @@ function EventCard({ event, onEditAthletes, onEditDetails, onDelete, onCancel }:
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
             <MapPin className="h-3 w-3" />
-            {event.city}
+            {city}
           </div>
         </div>
-        <Badge variant="outline" className={`shrink-0 font-normal ${levelColor[event.level]}`}>
-          {event.level}
+        <Badge variant="outline" className={`shrink-0 font-normal ${levelColor[level] ?? levelColor["Муниципальный"]}`}>
+          {level}
         </Badge>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <span className="flex items-center gap-1 text-muted-foreground">
           <CalendarDays className="h-3 w-3" />
-          {event.date}{event.dateEnd ? ` – ${event.dateEnd}` : ""}
+          {fmtDate(event.start_date)}
+          {event.end_date !== event.start_date ? ` – ${fmtDate(event.end_date)}` : ""}
         </span>
         <Badge variant="outline" className="border-primary/30 bg-primary/5 font-normal text-primary">
-          {event.discipline}
+          {discipline}
         </Badge>
         <span className="text-muted-foreground">
           {athleteCount} участников
@@ -409,8 +497,8 @@ function EventCard({ event, onEditAthletes, onEditDetails, onDelete, onCancel }:
       <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-border pt-2">
         {onEditAthletes && (
           <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onEditAthletes}>
-            {event.status === "past" ? <Medal className="mr-1 h-3 w-3" /> : <Users className="mr-1 h-3 w-3" />}
-            {event.status === "past" ? "Результаты" : "Участники"}
+            {st === "past" ? <Medal className="mr-1 h-3 w-3" /> : <Users className="mr-1 h-3 w-3" />}
+            {st === "past" ? "Результаты" : "Участники"}
           </Button>
         )}
         {onEditDetails && (
@@ -418,7 +506,7 @@ function EventCard({ event, onEditAthletes, onEditDetails, onDelete, onCancel }:
             <Pencil className="mr-1 h-3 w-3" /> Редактировать
           </Button>
         )}
-        {onCancel && event.status === "upcoming" && (
+        {onCancel && st === "upcoming" && (
           <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:bg-destructive/10" onClick={onCancel}>
             <X className="mr-1 h-3 w-3" /> Отменить
           </Button>
@@ -445,55 +533,46 @@ function ResultBadge({ label, count }: { label: string; count: number }) {
 
 interface CreateCompetitionData {
   title: string;
-  discipline: Discipline;
-  level: EventLevel;
+  discipline: string;
+  level: string;
   date: string;
   dateEnd?: string;
   city: string;
   location?: string;
-  status?: EventStatus;
-}
-
-function parseDate(str: string): Date | undefined {
-  if (!str) return undefined;
-  const parts = str.split(".");
-  if (parts.length === 3) {
-    const d = new Date(+parts[2], +parts[1] - 1, +parts[0]);
-    if (!isNaN(d.getTime())) return d;
-  }
-  const ruMonths: Record<string, number> = {
-    "января": 0, "февраля": 1, "марта": 2, "апреля": 3, "мая": 4, "июня": 5,
-    "июля": 6, "августа": 7, "сентября": 8, "октября": 9, "ноября": 10, "декабря": 11,
-  };
-  const match = str.match(/^(\d+)\s+([а-я]+)\s+(\d{4})$/);
-  if (match) {
-    const month = ruMonths[match[2].toLowerCase()];
-    if (month !== undefined) {
-      const d = new Date(+match[3], month, +match[1]);
-      if (!isNaN(d.getTime())) return d;
-    }
-  }
-  return undefined;
 }
 
 function CompetitionFormModal({ defaultDiscipline, competition, onSave, onClose }: {
-  defaultDiscipline?: Discipline;
-  competition?: Competition;
+  defaultDiscipline?: string;
+  competition?: CompetitionDto;
   onSave: (data: CreateCompetitionData) => void;
   onClose: () => void;
 }) {
+  const comp = competition ? primaryCompetition(competition) : null;
   const isEdit = !!competition;
-  const [title, setTitle] = useState(competition?.title ?? "");
-  const [discipline, setDiscipline] = useState<Discipline>(competition?.discipline ?? defaultDiscipline ?? "Бокс");
-  const [level, setLevel] = useState<EventLevel>(competition?.level ?? "Муниципальный");
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(competition ? parseDate(competition.date) : undefined);
-  const [selectedEndDate, setSelectedEndDate] = useState<Date | undefined>(competition?.dateEnd ? parseDate(competition.dateEnd) : undefined);
+  const [title, setTitle] = useState(competition?.name ?? "");
+  const [discipline, setDiscipline] = useState(comp?.discipline ?? defaultDiscipline ?? "Бокс");
+  const [level, setLevel] = useState(competition?.level ?? "Муниципальный");
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(competition ? parseDate(competition.start_date) : undefined);
+  const [selectedEndDate, setSelectedEndDate] = useState<Date | undefined>(competition ? parseDate(competition.end_date) : undefined);
   const [city, setCity] = useState(competition?.city ?? "");
   const [location, setLocation] = useState(competition?.location ?? "");
 
   const dateStr = selectedDate ? format(selectedDate, "dd.MM.yyyy") : "";
   const dateEndStr = selectedEndDate ? format(selectedEndDate, "dd.MM.yyyy") : "";
   const canSave = title.trim() && !!selectedDate && city.trim();
+
+  const handleSave = () => {
+    if (!canSave) return;
+    onSave({
+      title,
+      discipline,
+      level,
+      date: dateStr,
+      dateEnd: dateEndStr || undefined,
+      city,
+      location,
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10 backdrop-blur-sm">
@@ -510,14 +589,14 @@ function CompetitionFormModal({ defaultDiscipline, competition, onSave, onClose 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Вид спорта</label>
-              <select value={discipline} onChange={(e) => setDiscipline(e.target.value as Discipline)} className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30">
-                {(["Дзюдо", "Самбо", "Бокс", "ММА", "Борьба"] as Discipline[]).map((d) => (<option key={d} value={d}>{d}</option>))}
+              <select value={discipline} onChange={(e) => setDiscipline(e.target.value)} className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30">
+                {["Дзюдо", "Самбо", "Бокс", "ММА", "Борьба"].map((d) => (<option key={d} value={d}>{d}</option>))}
               </select>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Уровень *</label>
-              <select value={level} onChange={(e) => setLevel(e.target.value as EventLevel)} className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30">
-                {(["Муниципальный", "Региональный", "Федеральный", "Международный"] as EventLevel[]).map((l) => (<option key={l} value={l}>{l}</option>))}
+              <select value={level} onChange={(e) => setLevel(e.target.value)} className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30">
+                {["Муниципальный", "Региональный", "Федеральный", "Международный"].map((l) => (<option key={l} value={l}>{l}</option>))}
               </select>
             </div>
           </div>
@@ -562,7 +641,7 @@ function CompetitionFormModal({ defaultDiscipline, competition, onSave, onClose 
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
           <Button variant="outline" size="sm" className="h-8" onClick={onClose}>Отмена</Button>
-          <Button size="sm" className="h-8 bg-primary text-primary-foreground hover:bg-primary/90" disabled={!canSave} onClick={() => canSave && onSave({ title, discipline, level, date: dateStr, dateEnd: dateEndStr || undefined, city, location })}>
+          <Button size="sm" className="h-8 bg-primary text-primary-foreground hover:bg-primary/90" disabled={!canSave} onClick={handleSave}>
             {isEdit ? "Сохранить" : <><Plus className="mr-1 h-3 w-3" /> Добавить</>}
           </Button>
         </div>
@@ -576,41 +655,58 @@ function CompetitionFormModal({ defaultDiscipline, competition, onSave, onClose 
 function ManageAthletesModal({
   competition, coachId, onAddAthlete, onRemoveAthlete, onSetResult, onClose,
 }: {
-  competition: Competition;
+  competition: CompetitionDto;
   coachId: string;
-  onAddAthlete: (comp: Competition, athleteId: string, athleteName: string) => void;
-  onRemoveAthlete: (comp: Competition, athleteId: string) => void;
-  onSetResult: (comp: Competition, athleteId: string, result: CompetitionResult | undefined) => void;
+  onAddAthlete: (comp: CompetitionDto, athlete: AthleteDto) => void;
+  onRemoveAthlete: (comp: CompetitionDto, athleteId: string) => void;
+  onSetResult: (comp: CompetitionDto, athleteId: string, result: string | null) => void;
   onClose: () => void;
 }) {
   const [athleteSearch, setAthleteSearch] = useState("");
+  const [coachAthletes, setCoachAthletes] = useState<AthleteDto[]>([]);
+  const [athletesLoading, setAthletesLoading] = useState(true);
 
-  const coachAthletes = useMemo(() => {
-    const coachLastName = competition.coachName.split(" ")[0];
-    return athletes.filter((a) => a.coach.toLowerCase().includes(coachLastName.toLowerCase()));
-  }, [competition.coachName]);
+  useEffect(() => {
+    let cancelled = false;
+    setAthletesLoading(true);
+    fetchAthletes({ coachId })
+      .then((res) => {
+        if (!cancelled) {
+          setCoachAthletes(res.items);
+          setAthletesLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCoachAthletes([]);
+          setAthletesLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [coachId]);
 
   const filteredAthletes = useMemo(() => {
     const q = athleteSearch.trim().toLowerCase();
     if (!q) return coachAthletes;
-    return coachAthletes.filter((a) => a.name.toLowerCase().includes(q));
+    return coachAthletes.filter((a) => athleteFullName(a).toLowerCase().includes(q));
   }, [coachAthletes, athleteSearch]);
 
-  const selectedIds = new Set(competition.athletes.map((a) => a.athleteId));
+  const currentAthletes = competitionAthletes(competition);
+  const selectedIds = new Set(currentAthletes.map((a) => a.athlete_id));
+  const st = effectiveStatus(competition);
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10 backdrop-blur-sm">
       <div className="w-full max-w-2xl rounded-2xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
-            <h3 className="font-display text-lg font-bold text-secondary">{competition.title}</h3>
-            <p className="text-sm text-muted-foreground">{competition.city} · {competition.date}</p>
+            <h3 className="font-display text-lg font-bold text-secondary">{competition.name}</h3>
+            <p className="text-sm text-muted-foreground">{competition.city} · {fmtDate(competition.start_date)}</p>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
         </div>
 
         <div className="px-6 py-4">
-          {/* Athlete search */}
           <div className="relative mb-4">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -621,21 +717,20 @@ function ManageAthletesModal({
             />
           </div>
 
-          {/* Selected athletes */}
-          {competition.athletes.length > 0 && (
+          {currentAthletes.length > 0 && (
             <div className="mb-4">
-              <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Участники ({competition.athletes.length})</h4>
+              <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Участники ({currentAthletes.length})</h4>
               <div className="space-y-2">
-                {competition.athletes.map((ath) => (
-                  <div key={ath.athleteId} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
-                    <span className="text-sm font-medium text-secondary">{ath.athleteName}</span>
+                {currentAthletes.map((ath) => (
+                  <div key={ath.athlete_id} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
+                    <span className="text-sm font-medium text-secondary">{ath.athlete_name}</span>
                     <div className="flex items-center gap-1.5">
-                      {competition.status === "past" && (
+                      {st === "past" && (
                         <div className="flex flex-wrap gap-1">
                           {resultOrder.map((r) => (
                             <button
                               key={r}
-                              onClick={() => onSetResult(competition, ath.athleteId, ath.result === r ? undefined : r)}
+                              onClick={() => onSetResult(competition, ath.athlete_id, ath.result === r ? null : r)}
                               className={`rounded px-2 py-1 text-xs font-semibold transition ${
                                 ath.result === r
                                   ? "bg-accent text-accent-foreground"
@@ -649,7 +744,7 @@ function ManageAthletesModal({
                           ))}
                         </div>
                       )}
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive hover:bg-destructive/10" onClick={() => onRemoveAthlete(competition, ath.athleteId)}>
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive hover:bg-destructive/10" onClick={() => onRemoveAthlete(competition, ath.athlete_id)}>
                         <X className="h-3 w-3" />
                       </Button>
                     </div>
@@ -659,11 +754,13 @@ function ManageAthletesModal({
             </div>
           )}
 
-          {/* Available athletes */}
           <div>
             <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Спортсмены тренера</h4>
             <div className="max-h-60 space-y-1 overflow-y-auto">
-              {filteredAthletes.length === 0 && (
+              {athletesLoading && (
+                <p className="py-4 text-center text-xs text-muted-foreground">Загрузка спортсменов…</p>
+              )}
+              {!athletesLoading && filteredAthletes.length === 0 && (
                 <p className="py-4 text-center text-xs text-muted-foreground">Спортсмены не найдены</p>
               )}
               {filteredAthletes.map((a) => {
@@ -673,11 +770,11 @@ function ManageAthletesModal({
                     isSelected ? "border-primary/30 bg-primary/5" : "border-border hover:border-primary/30"
                   }`}>
                     <div>
-                      <span className="text-sm font-medium text-secondary">{a.name}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">{a.rank} · {a.discipline}</span>
+                      <span className="text-sm font-medium text-secondary">{athleteFullName(a)}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">{a.rank ?? ""} · {a.sport_type}</span>
                     </div>
                     {!isSelected && (
-                      <Button size="sm" className="h-7 text-xs" onClick={() => onAddAthlete(competition, a.id, a.name)}>
+                      <Button size="sm" className="h-7 text-xs" onClick={() => onAddAthlete(competition, a)}>
                         <Plus className="mr-0.5 h-3 w-3" /> Добавить
                       </Button>
                     )}

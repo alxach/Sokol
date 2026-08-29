@@ -15,6 +15,8 @@ class Event(TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(String(300), nullable=False)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    level: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(150), nullable=True)
     center_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("centers.id"), nullable=True,
     )

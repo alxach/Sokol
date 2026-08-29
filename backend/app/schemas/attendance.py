@@ -12,11 +12,18 @@ class AttendanceMark(BaseModel):
     absence_reason: str | None = None
 
 
+class AttendanceBatchRecord(BaseModel):
+    athlete_id: str
+    schedule_id: str | None = None
+    status: str
+    absence_reason: str | None = None
+
+
 class AttendanceBatch(BaseModel):
     group_id: str
     schedule_id: str | None = None
     date: date
-    records: list[AttendanceMark]
+    records: list[AttendanceBatchRecord]
 
 
 class AttendanceUpdate(BaseModel):

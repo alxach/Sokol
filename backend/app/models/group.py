@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
-    from app.models.schedule import Schedule
+    from app.models.schedule import Schedule, SchedulePeriod
 
 
 class Group(TimestampMixin, Base):
@@ -32,6 +32,9 @@ class Group(TimestampMixin, Base):
         back_populates="group", cascade="all, delete-orphan",
     )
     schedules: Mapped[list["Schedule"]] = relationship(
+        back_populates="group", cascade="all, delete-orphan",
+    )
+    schedule_periods: Mapped[list["SchedulePeriod"]] = relationship(
         back_populates="group", cascade="all, delete-orphan",
     )
 
