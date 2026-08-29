@@ -28,15 +28,14 @@ const athleteSchema = z.object({
 const coachSchema = z.object({
   id: z.string(),
   name: z.string(),
-  disciplines: z.array(z.string()),
-  groups: z.number(),
-  athletes: z.number(),
+  specialization: z.string(),
+  groups_count: z.number(),
+  athletes_count: z.number(),
   workload: z.number(),
-  rating: z.number(),
-  efficiency: z.number(),
   status: z.string(),
-  city: z.string(),
-  experience: z.number(),
+  center_name: z.string().nullable(),
+  center_city: z.string().nullable(),
+  years: z.number(),
 });
 
 const competitionSchema = z.object({
@@ -126,15 +125,14 @@ async function buildCoachesExcel(data: ExportPayload & { type: "coaches" }) {
   const cols = [
     { header: "ID", key: "id", width: 14 },
     { header: "ФИО", key: "name", width: 28 },
-    { header: "Дисциплины", key: "disciplines", width: 22 },
-    { header: "Групп", key: "groups", width: 8 },
-    { header: "Спортсменов", key: "athletes", width: 14 },
+    { header: "Специализация", key: "specialization", width: 18 },
+    { header: "Центр", key: "center", width: 22 },
+    { header: "Город", key: "city", width: 14 },
+    { header: "Групп", key: "groups_count", width: 8 },
+    { header: "Спортсменов", key: "athletes_count", width: 14 },
     { header: "Нагрузка %", key: "workload", width: 12 },
-    { header: "Рейтинг", key: "rating", width: 10 },
-    { header: "Эффективность %", key: "efficiency", width: 16 },
     { header: "Статус", key: "status", width: 16 },
-    { header: "Город", key: "city", width: 18 },
-    { header: "Стаж (лет)", key: "experience", width: 12 },
+    { header: "Стаж (лет)", key: "years", width: 12 },
   ];
 
   const headerRow = ws.addRow(cols.map((c) => c.header));
@@ -146,8 +144,8 @@ async function buildCoachesExcel(data: ExportPayload & { type: "coaches" }) {
 
   for (const c of data.data) {
     ws.addRow([
-      c.id, c.name, c.disciplines.join(", "), c.groups, c.athletes, c.workload,
-      c.rating, c.efficiency, c.status, c.city, c.experience,
+      c.id, c.name, c.specialization, c.center_name ?? "", c.center_city ?? "",
+      c.groups_count, c.athletes_count, c.workload, c.status, c.years,
     ]);
   }
 

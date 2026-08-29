@@ -161,9 +161,11 @@
 
 **Backend:**
 - models/incentive_criteria.py: IncentiveCriteria (id, center_id FK centers ON DELETE CASCADE + UniqueConstraint uq_incentive_criteria_center, updated_by FK users SET NULL, 10 полей: athletes/hours/social_events/sports_events/development_events × full/basic, hours Numeric(4,1), TimestampMixin). Миграция 5a6b7c8d9e0_add_incentive_criteria (revises e1f2a3b4c5d6) применена.
-- epositories/incentive_repo.py: IncentiveCriteriaRepository.get_by_center. schemas/incentive.py: IncentiveCriteriaUpsert (validate_levels: basic ≤ full → 422), IncentiveCriteriaOut.
+- 
+epositories/incentive_repo.py: IncentiveCriteriaRepository.get_by_center. schemas/incentive.py: IncentiveCriteriaUpsert (validate_levels: basic ≤ full → 422), IncentiveCriteriaOut.
 - incentive_service.py: get_criteria (coach — свой центр read; admin — свой центр; director/superadmin — любой/фильтр), upsert_criteria (coach 403, admin чужой центр 403).
-- outer.py: GET /incentive/criteria, PUT /incentive/criteria/{center_id}. dependencies.py передаёт criteria_repo.
+- 
+outer.py: GET /incentive/criteria, PUT /incentive/criteria/{center_id}. dependencies.py передаёт criteria_repo.
 - Тесты 	est_criteria_workflow.py (=6): upsert admin свой центр 200/idempotent, admin чужой центр 403, director/superadmin любой центр, coach read 200/PUT 403, basic>full 422, director весь реестр с фильтром. pytest 68/68, ruff по изменённым — clean.
 
 **Frontend:**
@@ -204,14 +206,16 @@
 
 **Backend (backend/app):**
 - schemas/group.py: GroupResponse — UUID + from_attributes, добавлены schedule_note, created_at, обогащение (coach_name, coach_user_id, center_name, center_city, athlete_ids, athlete_count); новый GroupUpdate (PATCH semantics через model_fields_set).
-- epositories/group_repo.py: GroupMemberRepository — find(group_id, athlete_id), remove(group_id, athlete_id) (composite PK), list_for_groups(group_ids).
+- 
+epositories/group_repo.py: GroupMemberRepository — find(group_id, athlete_id), remove(group_id, athlete_id) (composite PK), list_for_groups(group_ids).
 - services/group_service.py: переписан по паттерну athlete_service — enrich coach/center через IN-выборки, update (сет поля из set), delete, add_member с default join_date=date.today() (колонка NOT NULL, схема допускала None), remove_member по составному ключу.
 - modules/groups/router.py: добавлен PATCH /groups/{id}, DELETE /groups/{id}; DELETE /members/{member_id} заменён на DELETE /groups/{id}/members/{athlete_id}; 409 при дубле участника.
 - 	ests/test_groups.py (+3): CRUD группы, coach_name enrich, add/member remove/duplicate(409)/404, RBAC. Итого pytest 71/71, ruff чист (изменённые файлы).
 
 **Frontend (frontend/src):**
 - lib/api/groups.functions.ts: GroupDto (на основе расширенного GroupResponse), group fetch/create/update/delete, add/remove member.
-- outes/groups.tsx (~620 строк, было ~920): полностью на API, mock-импорты удалены. Список карточек (имя, sport_type, кол-во спортсменов, тренер для не-тренера), форма создания/редактирования (название, select вида спорта, описание→schedule_note, состав чекбоксами), детальная карточка (описание, дисциплина, тренер, плашка «Расписание — страница "Расписание"», состав с удалением участника и кнопкой «Добавить»), удаление группы с confirm. Тёрен-фильтр «Мои группы» по coach_user_id==user.id, director — по center_id группы. AddAthleteModal на реальных спортсменах + вкладка «Новый» (AthleteModal). Скорение «группа/группы/групп».
+- 
+outes/groups.tsx (~620 строк, было ~920): полностью на API, mock-импорты удалены. Список карточек (имя, sport_type, кол-во спортсменов, тренер для не-тренера), форма создания/редактирования (название, select вида спорта, описание→schedule_note, состав чекбоксами), детальная карточка (описание, дисциплина, тренер, плашка «Расписание — страница "Расписание"», состав с удалением участника и кнопкой «Добавить»), удаление группы с confirm. Тёрен-фильтр «Мои группы» по coach_user_id==user.id, director — по center_id группы. AddAthleteModal на реальных спортсменах + вкладка «Новый» (AthleteModal). Скорение «группа/группы/групп».
 
 **Live-смоук (localhost:8080, coach@sokol.ru):** создан тестовый шлейф через API (регион→центр→тренер(Тестов)→спортсмен(Смоук)), затем через UI: создание группы «Группа юношей 2010» (ПОСТ 200, член добавлен), деталь с составом, удаление участника (Состав 1→0), добавление участника через модал (0→1), удаление группы через confirm (200). После каждого действия перезагрузка данных из API. В конце БД очищена (groups/members/athletes/coaches/centers = 0). МCP-грабли: window.confirm дублируется/прыгает под MCP (suppressed) — удаление группы в live проверено и через UI-диалог, и контрольным DELETE через API; MCP-клики на кнопки в не-hover-зоне нестабильны → использовать DOM .click() или evaluate.
 
@@ -269,3 +273,13 @@
 outes/analytics.tsx без моков (KPI, пай-чарты, area, бар, топ-таблица, empty-state, загрузка/ошибка, заглушка не-админам). vite build + tsc OK (legacy-ошибки только exports.functions.ts).
 
 **Смоук (admin):** KPI 3/1/1/2, «Активные 3», «Дзюдо 3», медаль в Июл по AreaChart, нагрузка «Соколова Марина», топ Ana 3 очка / Bob 2 очка. Данные созданы/очищены через API. Консоль без ошибок (только a11y). Uvicorn перезапущен с --reload (старый код без нового роутера давал 404).
+
+
+### 2026-08-29 — Тренеры на реальном API
+
+**Backend:** CoachService._enrich — имя «Фамилия Имя» из User, центр/город из Center, groups_count (Group.coach_id), athletes_count (Athlete.coach_id), vacations/sick_leaves isoformat. create/update переписаны: CoachVacation/CoachSickLeave вставляются/удаляются напрямую по coach_id (вместо lazy-relationship coach.vacations — ловил MissingGreenlet). pytest **81/81** (+test_coaches.py: RBAC coach GET=200 / coach POST+PATCH=403 / admin PATCH=200, create+enrich с отпуском/больничным/счётчиками, update vacations/is_active), ruff ok.
+
+**Frontend:** coaches.functions.ts — CoachDto (name, center_name/city, groups_count, athletes_count, vacations, sick_leaves, biography) + createCoach/updateCoach + coachStatusTitle (Архив/Отпуск/На больничном/Активный). 
+outes/coaches.tsx полностью без моков: таблица (ID, тренер+центр+стаж, специализация, группы/спортсмены, нагрузка % от max, статус), фильтр-чипы специализаций из данных, KPI, деталь-карточка с редактированием отпусков/больничных/is_active/категории/био, create-модалка скрыта для admin (только суперадмин: выбор пользователя из /users и центра из /organizations/centers). Экспорт Excel переведён на новые поля. Убраны нереализуемые в модели поля (email/phone/telegram/education/rating/efficiency).
+
+**Смоук (admin на :8082):** список показывает реальные данные (Соколова Марина, ЦСЕ Смоук Москва, 6 лет стажа); деталь-модалка; отпуск 2026-08-20→09-10 + больничный → после reload бейдж «Отпуск», KPI активных 0; данные приведены к исходному (vacations=[], sick=[], is_active=true). Грабли: при первом сохранении через модалку отпуск не сохранился (данные ушли без vacations) — прямой PATCH подтвердил, что сервер и модалка корректны; первый UI-клик был с устаревшим HMR-состоянием. /users только superadmin — этим обусловлено скрытие кнопки «Добавить» для admin.
