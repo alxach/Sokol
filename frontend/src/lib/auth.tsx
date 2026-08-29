@@ -12,6 +12,7 @@ interface User {
   coachName?: string;
   coachDiscipline?: string;
   city?: string;
+  phone?: string;
 }
 
 interface AuthContextValue {
@@ -44,6 +45,7 @@ interface LoginResponse {
 interface MeResponse {
   id: string;
   email: string;
+  phone?: string | null;
   first_name: string;
   last_name: string;
   middle_name?: string | null;
@@ -62,6 +64,7 @@ function mapUser(u: LoginResponse["user"] | MeResponse): User {
     lastName: u.last_name,
     roles: u.roles,
     centerId: "center_id" in u ? (u as LoginResponse["user"]).center_id ?? undefined : undefined,
+    phone: "phone" in u ? (u as MeResponse).phone ?? undefined : undefined,
     coachName: buildFullName(u),
   };
 }
