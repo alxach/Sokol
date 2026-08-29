@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { FileText, FileDown, Plus, Search, CheckCircle, XCircle, Send, Eye, X } from "lucide-react";
+import { FileText, FileDown, Plus, Search, CheckCircle, XCircle, Send, Eye, X, Trash2 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
@@ -9,8 +9,13 @@ import { useAuth, useAuthGuard } from "@/lib/auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { reports, monthlyReportTemplate, groups, type Report, type ReportStatus, persistReports } from "@/lib/mock-data";
+import {
+  type ReportDto, type ReportStatus,
+  fetchReports, fetchReport, submitReport, approveReport, rejectReport, deleteReport,
+  fetchReportTemplates, type ReportTemplateDto, type ReportFieldDto,
+} from "@/lib/api/reports.functions";
 import { generateReportDocx } from "@/lib/api/reports.functions";
+import { fetchGroups, type GroupDto } from "@/lib/api/groups.functions";
 import { calculateGross, calculateNdf, calculateInsurance } from "@/lib/mock-data";
 
 function downloadBase64(base64: string, filename: string) {
@@ -25,6 +30,18 @@ function downloadBase64(base64: string, filename: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function initialsOf(name: string | null): string {
+  if (!name) return "—";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map((p) => p[0]).join("").toUpperCase();
+}
+
+function toRuDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : format(d, "dd.MM.yyyy");
 }
 
 export const Route = createFileRoute("/reports")({
@@ -48,33 +65,56 @@ const statusFilters: ("Все" | ReportStatus)[] = ["Все", "draft", "submitte
 
 function ReportsPage() {
   const { loading, user } = useAuthGuard();
-  const { isAdmin, isCoach } = useAuth();
+  const { isAdmin, isCoach, isDirector, isSuperadmin } = useAuth();
+  const canReview = isAdmin || isDirector || isSuperadmin;
   const router = useRouterState();
   const isChildRoute = router.matches.some((m) => m.routeId.startsWith("/reports/") && m.routeId !== "/reports");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("Все");
-  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [reports, setReports] = useState<ReportDto[]>([]);
+  const [templateById, setTemplateById] = useState<Record<string, ReportTemplateDto>>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleDownload = async (r: Report) => {
+  const loadReports = useCallback(async () => {
+    try {
+      setError(null);
+      const [data, templates] = await Promise.all([
+        fetchReports(isAdmin || isDirector ? { centerId: user?.centerId } : {}),
+        fetchReportTemplates(),
+      ]);
+      setReports(data.items);
+      const map: Record<string, ReportTemplateDto> = {};
+      for (const t of templates) map[t.id] = t;
+      setTemplateById(map);
+    } catch (err) {
+      console.error("Ошибка загрузки отчётов:", err);
+      setError("Не удалось загрузить отчёты.");
+    }
+  }, [isAdmin, user?.centerId]);
+
+  useEffect(() => { void loadReports(); }, [loadReports]);
+
+  const handleDownload = async (r: ReportDto, groups: GroupDto[]) => {
     setDownloading(r.id);
     try {
-      const coachGroups = groups.filter((g) => g.coachId === r.coachId);
+      const coachGroups = groups.filter((g) => r.coach_user_id ? g.coach_user_id === r.coach_user_id : g.coach_id === r.coach_id);
       const resolvedGroup = coachGroups.map((g) => g.name).join(", ");
       const result = await generateReportDocx({
         data: {
           reportId: r.id,
-          coachName: r.coachName,
-          sport: r.sport,
+          coachName: r.coach_name ?? r.author_name ?? "—",
+          sport: r.sport ?? "—",
           group: resolvedGroup,
-          periodStart: r.periodStart,
-          periodEnd: r.periodEnd,
+          periodStart: toRuDate(r.period_start),
+          periodEnd: toRuDate(r.period_end),
           status: r.status,
-          submittedAt: r.submittedAt,
-          reviewedAt: r.reviewedAt,
-          reviewerName: r.reviewerName,
-          reviewerComment: r.reviewerComment,
-          data: r.data as Record<string, string | number>,
+          submittedAt: toRuDate(r.reviewed_at) || undefined,
+          reviewedAt: toRuDate(r.reviewed_at) || undefined,
+          reviewerName: undefined,
+          reviewerComment: r.review_comment ?? undefined,
+          data: r.data_json as Record<string, string | number>,
         },
       });
       downloadBase64(result.base64, result.filename);
@@ -86,15 +126,13 @@ function ReportsPage() {
     }
   };
 
-  const accessible = reports.filter((r) => {
-    if (isCoach && user) return r.coachId === user.id;
-    if (isAdmin && user?.centerId) return r.centerId === user.centerId;
-    return true;
-  });
-
+  const accessible = reports;
   const filtered = accessible.filter((r) => {
     const q = query.trim().toLowerCase();
-    const matchQ = !q || r.coachName.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || r.sport.toLowerCase().includes(q);
+    const matchQ = !q ||
+      (r.coach_name ?? "").toLowerCase().includes(q) ||
+      r.id.toLowerCase().includes(q) ||
+      (r.sport ?? "").toLowerCase().includes(q);
     const matchS = statusFilter === "Все" || r.status === statusFilter;
     return matchQ && matchS;
   });
@@ -160,6 +198,10 @@ function ReportsPage() {
           </div>
         </div>
 
+        {error && (
+          <div className="border-b border-border px-4 py-3 text-sm text-destructive">{error}</div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -175,17 +217,17 @@ function ReportsPage() {
             <tbody className="divide-y divide-border">
               {filtered.map((r) => (
                 <tr key={r.id} className="transition hover:bg-muted/30">
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{r.id}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{r.id.slice(0, 8)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-secondary to-primary text-[10px] font-bold text-primary-foreground">
-                        {r.coachInitials}
+                        {initialsOf(r.coach_name ?? r.author_name)}
                       </div>
-                      <span className="font-medium text-secondary">{r.coachName}</span>
+                      <span className="font-medium text-secondary">{r.coach_name ?? r.author_name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{r.periodStart} – {r.periodEnd}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{r.sport}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{toRuDate(r.period_start)} – {toRuDate(r.period_end)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{r.sport ?? "—"}</td>
                   <td className="px-4 py-3">
                     <Badge variant="outline" className={`font-normal ${statusConfig[r.status].style}`}>
                       {statusConfig[r.status].label}
@@ -193,66 +235,138 @@ function ReportsPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => setSelectedReport(r)}>
+                      <Button variant="ghost" size="sm" onClick={() => setSelectedId(r.id)}>
                         <Eye className="mr-1 h-3.5 w-3.5" /> Открыть
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDownload(r)} disabled={downloading === r.id}>
+                      <Button
+                        variant="ghost" size="sm"
+                        onClick={async () => {
+                          try {
+                            const groups = await (await fetchGroups({ perPage: 1000 })).items;
+                            await handleDownload(r, groups);
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        }}
+                        disabled={downloading === r.id}
+                      >
                         <FileDown className="mr-1 h-3.5 w-3.5" /> {downloading === r.id ? "..." : "Word"}
                       </Button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
+              {filtered.length === 0 && !error && (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-sm text-muted-foreground">
-                    Ничего не найдено по выбранным фильтрам.
+                    {reports.length === 0 ? "Отчёты не найдены." : "Ничего не найдено по выбранным фильтрам."}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+
+        <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
+          <button onClick={() => { setSelectedId(null); loadReports(); }} className="hover:text-foreground">Обновить</button>
+        </div>
       </Card>
 
-      {selectedReport && (
+      {selectedId && (
         <ReportDetailModal
-          report={selectedReport}
-          isAdmin={isAdmin}
-          onClose={() => setSelectedReport(null)}
+          reportId={selectedId}
+          templateById={templateById}
+          canReview={canReview}
+          isAuthor={isCoach && user ? (reports.find((r) => r.id === selectedId)?.author_id === user.id) : false}
+          onClose={() => setSelectedId(null)}
+          onReload={loadReports}
         />
       )}
     </AppShell>
   );
 }
 
-function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdmin: boolean; onClose: () => void }) {
+function ReportDetailModal({
+  reportId, templateById, canReview, isAuthor, onClose, onReload,
+}: {
+  reportId: string;
+  templateById: Record<string, ReportTemplateDto>;
+  canReview: boolean;
+  isAuthor: boolean;
+  onClose: () => void;
+  onReload: () => void;
+}) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const template = report.templateId === "TPL-001" ? monthlyReportTemplate : undefined;
+  const [report, setReport] = useState<ReportDto | null>(null);
+  const [loading, setLoading] = useState(true);
   const [modalDownloading, setModalDownloading] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      setLoading(true);
+      const r = await fetchReport(reportId);
+      setReport(r);
+    } catch (err) {
+      console.error("Ошибка загрузки отчёта:", err);
+      setError("Не удалось загрузить отчёт.");
+    } finally {
+      setLoading(false);
+    }
+  }, [reportId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  if (!report) {
+    if (loading) {
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+        </div>
+      );
+    }
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6">
+          <p className="text-sm text-destructive">{error ?? "Отчёт не найден."}</p>
+          <div className="mt-4 flex justify-end">
+            <Button variant="outline" onClick={onClose}>Закрыть</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const template = report.template_id ? templateById[report.template_id] : undefined;
+  const fields: ReportFieldDto[] = template?.structure_json?.fields ?? [];
 
   const handleModalDownload = async () => {
     setModalDownloading(true);
     try {
-      const coachGroups = groups.filter((g) => g.coachId === report.coachId);
+      const { items } = await fetchGroups({ perPage: 1000 });
+      const coachGroups = items.filter((g) =>
+        report.coach_user_id ? g.coach_user_id === report.coach_user_id : g.coach_id === report.coach_id,
+      );
       const resolvedGroup = coachGroups.map((g) => g.name).join(", ");
       const result = await generateReportDocx({
         data: {
           reportId: report.id,
-          coachName: report.coachName,
-          sport: report.sport,
+          coachName: report.coach_name ?? report.author_name ?? "—",
+          sport: report.sport ?? "—",
           group: resolvedGroup,
-          periodStart: report.periodStart,
-          periodEnd: report.periodEnd,
+          periodStart: toRuDate(report.period_start),
+          periodEnd: toRuDate(report.period_end),
           status: report.status,
-          submittedAt: report.submittedAt,
-          reviewedAt: report.reviewedAt,
-          reviewerName: report.reviewerName,
-          reviewerComment: report.reviewerComment,
-          data: report.data as Record<string, string | number>,
+          submittedAt: undefined,
+          reviewedAt: toRuDate(report.reviewed_at) || undefined,
+          reviewerName: undefined,
+          reviewerComment: report.review_comment ?? undefined,
+          data: report.data_json as Record<string, string | number>,
         },
       });
       downloadBase64(result.base64, result.filename);
@@ -264,44 +378,39 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
     }
   };
 
-  const handleApprove = () => {
-    report.status = "approved";
-    report.reviewedAt = format(new Date(), "dd.MM.yyyy");
-    report.reviewerName = user ? `${user.firstName} ${user.lastName}` : "—";
-    persistReports();
-    onClose();
-  };
-
-  const handleReject = () => {
-    if (!rejectComment.trim() && showRejectInput) return;
-    report.status = "rejected";
-    report.reviewerComment = rejectComment;
-    report.reviewedAt = format(new Date(), "dd.MM.yyyy");
-    report.reviewerName = user ? `${user.firstName} ${user.lastName}` : "—";
-    persistReports();
-    onClose();
-  };
-
-  const handleSubmitDraft = () => {
-    report.status = "submitted";
-    report.submittedAt = format(new Date(), "dd.MM.yyyy");
-    report.programId = "prog-1";
-
-    // Auto-calculate payout tier based on norm validation
-    if (template?.fields) {
-      let allMeetFull = true;
-      let anyMeetBasic = false;
-      for (const field of template.fields) {
-        if (field.normFull == null) continue;
-        const val = Number(report.data[field.key]);
-        if (isNaN(val) || val < field.normFull) allMeetFull = false;
-        if (!isNaN(val) && val >= (field.normBasic ?? 0)) anyMeetBasic = true;
-      }
-      report.payoutTier = allMeetFull ? 50000 : anyMeetBasic ? 25000 : 0;
+  const runAction = async (action: () => Promise<ReportDto>) => {
+    setBusy(true);
+    try {
+      await action();
+      await load();
+      onReload();
+    } catch (err) {
+      console.error(err);
+      alert("Операция не выполнена. Попробуйте ещё раз.");
+    } finally {
+      setBusy(false);
     }
+  };
 
-    persistReports();
-    onClose();
+  const handleApprove = () => runAction(() => approveReport(report.id));
+  const handleReject = () => {
+    if (!rejectComment.trim()) return;
+    runAction(() => rejectReport(report.id, rejectComment));
+  };
+  const handleSubmitDraft = () => runAction(() => submitReport(report.id));
+  const handleDelete = async () => {
+    if (!window.confirm("Удалить черновик отчёта?")) return;
+    setBusy(true);
+    try {
+      await deleteReport(report.id);
+      onReload();
+      onClose();
+    } catch (err) {
+      console.error(err);
+      alert("Не удалось удалить отчёт.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -310,9 +419,9 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
-            <h3 className="font-display text-lg font-bold text-secondary">{template?.name ?? "Отчёт"}</h3>
+            <h3 className="font-display text-lg font-bold text-secondary">{template?.name ?? report.template_name ?? "Отчёт"}</h3>
             <p className="text-sm text-muted-foreground">
-              {report.coachName} · {report.sport} · {report.group}
+              {report.coach_name ?? report.author_name} · {report.sport ?? "—"} · {report.center_name ?? ""}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -328,23 +437,22 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
 
         {/* Period */}
         <div className="border-b border-border px-6 py-3 text-sm text-muted-foreground">
-          Отчётный период: <span className="font-medium text-foreground">{report.periodStart}</span> – <span className="font-medium text-foreground">{report.periodEnd}</span>
-          {report.submittedAt && <> · Отправлен: <span className="font-medium text-foreground">{report.submittedAt}</span></>}
-          {report.reviewedAt && <> · Проверен: <span className="font-medium text-foreground">{report.reviewedAt}</span></>}
+          Отчётный период: <span className="font-medium text-foreground">{toRuDate(report.period_start)}</span> – <span className="font-medium text-foreground">{toRuDate(report.period_end)}</span>
+          {report.reviewed_at && <> · Проверен: <span className="font-medium text-foreground">{toRuDate(report.reviewed_at)}</span></>}
         </div>
 
         {/* Protocol link */}
-        {report.commissionProtocolId && (
+        {report.commission_protocol_id && (
           <div className="border-b border-border px-6 py-2 flex items-center gap-2 text-xs text-muted-foreground">
             <FileText className="h-3.5 w-3.5 text-primary/60" />
-            <span>Привязан к протоколу комиссии: <span className="font-medium text-foreground">{report.commissionProtocolId}</span></span>
+            <span>Привязан к протоколу комиссии: <span className="font-medium text-foreground">{report.commission_protocol_id.slice(0, 8)}</span></span>
           </div>
         )}
 
         {/* Fields */}
         <div className="space-y-4 px-6 py-4">
-          {template?.fields.map((field) => {
-            const value = report.data[field.key];
+          {fields.map((field) => {
+            const value = report.data_json[field.key];
             const numVal = typeof value === "number" ? value : Number(value);
             const meetsNormFull = field.normFull != null && !isNaN(numVal) ? numVal >= field.normFull : null;
             const meetsNormBasic = field.normBasic != null && !isNaN(numVal) ? numVal >= field.normBasic : null;
@@ -407,31 +515,33 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
               </div>
             );
           })}
+          {fields.length === 0 && (
+            <p className="text-sm text-muted-foreground">Нет данных для отображения.</p>
+          )}
         </div>
 
         {/* Reviewer comment */}
-        {report.reviewerComment && (
+        {report.review_comment && (
           <div className="mx-6 mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
               <XCircle className="h-3.5 w-3.5" /> Комментарий проверяющего
             </div>
-            <p className="mt-1 text-sm text-foreground">{report.reviewerComment}</p>
-            {report.reviewerName && <p className="mt-1 text-xs text-muted-foreground">— {report.reviewerName}</p>}
+            <p className="mt-1 text-sm text-foreground">{report.review_comment}</p>
           </div>
         )}
 
         {/* Payout calculation (v8, Приложение №6) */}
-        {report.payoutTier != null && report.payoutTier > 0 && (
+        {report.payout_tier != null && report.payout_tier > 0 && (
           <div className="border-t border-border px-6 py-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs font-semibold text-secondary">Расчёт выплаты (Приложение №6)</span>
               <Badge variant="outline" className="text-xs font-normal">
-                {report.payoutTier === 50000 ? "50 000 ₽" : "25 000 ₽"}
+                {report.payout_tier === 50000 ? "50 000 ₽" : "25 000 ₽"}
               </Badge>
             </div>
             <div className="grid grid-cols-4 gap-4 rounded-lg border border-border bg-muted/20 p-3 text-sm">
               {(() => {
-                const net = report.payoutTier;
+                const net = report.payout_tier;
                 const gross = calculateGross(net, 13, 30.2);
                 const ndfl = calculateNdf(gross, 13);
                 const insurance = calculateInsurance(gross, 30.2);
@@ -461,7 +571,7 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
         )}
 
         {/* Actions */}
-        {isAdmin && report.status === "submitted" && (
+        {canReview && report.status === "submitted" && (
           <div className="border-t border-border px-6 py-4">
             {showRejectInput && (
               <div className="mb-3">
@@ -478,13 +588,13 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
             <div className="flex items-center justify-end gap-3">
               {showRejectInput ? (
                 <>
-                  <Button variant="outline" onClick={() => { setShowRejectInput(false); setRejectComment(""); }}>
+                  <Button variant="outline" onClick={() => { setShowRejectInput(false); setRejectComment(""); }} disabled={busy}>
                     Отмена
                   </Button>
                   <Button
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     onClick={handleReject}
-                    disabled={!rejectComment.trim()}
+                    disabled={!rejectComment.trim() || busy}
                   >
                     <XCircle className="mr-1.5 h-4 w-4" /> Подтвердить отклонение
                   </Button>
@@ -494,7 +604,7 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
                   <Button variant="outline" className="border-destructive text-destructive hover:bg-destructive/10" onClick={() => setShowRejectInput(true)}>
                     <XCircle className="mr-1.5 h-4 w-4" /> Отклонить
                   </Button>
-                  <Button className="bg-[color:var(--success)] text-white hover:bg-[color:var(--success)]/90" onClick={handleApprove}>
+                  <Button className="bg-[color:var(--success)] text-white hover:bg-[color:var(--success)]/90" onClick={handleApprove} disabled={busy}>
                     <CheckCircle className="mr-1.5 h-4 w-4" /> Утвердить
                   </Button>
                 </>
@@ -503,12 +613,20 @@ function ReportDetailModal({ report, isAdmin, onClose }: { report: Report; isAdm
           </div>
         )}
 
-        {report.status === "draft" && (
+        {report.status === "draft" && isAuthor && (
           <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
-            <Button variant="outline" onClick={() => { onClose(); navigate({ to: "/reports/new" }); }}>
+            <Button variant="outline" onClick={() => { onClose(); navigate({ to: "/reports/new", search: { reportId: report.id } }); }} disabled={busy}>
               Редактировать
             </Button>
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={handleSubmitDraft}>
+            <Button
+              variant="ghost"
+              onClick={handleDelete}
+              disabled={busy}
+              className="text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="mr-1.5 h-4 w-4" /> Удалить
+            </Button>
+            <Button className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={handleSubmitDraft} disabled={busy}>
               <Send className="mr-1.5 h-4 w-4" /> Отправить на проверку
             </Button>
           </div>

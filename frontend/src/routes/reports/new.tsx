@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { ArrowLeft, Send, Save, Lightbulb, ClipboardList } from "lucide-react";
+import { ArrowLeft, Send, Save, Lightbulb, ClipboardList, RefreshCw } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -10,13 +10,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth, useAuthGuard } from "@/lib/auth";
 import {
-  monthlyReportTemplate, reports, groups,
-  freshReportId, persistReports,
-  countAthletesUnder21, calculateWeeklyHours, getPlanItemsForMonth,
-  getMonthNameFromDate, type PlanItem,
-} from "@/lib/mock-data";
+  type ReportTemplateDto, type ReportFieldDto, type ReportDto, type ReportCreatePayload,
+  fetchReportTemplates, createReport, updateReport,
+} from "@/lib/api/reports.functions";
+import { fetchGroups, type GroupDto } from "@/lib/api/groups.functions";
+import { fetchAthletes, calcAge } from "@/lib/api/athletes.functions";
+import { fetchSchedulePeriods, type SchedulePeriodDto } from "@/lib/api/schedules.functions";
+import { fetchPlans, monthName } from "@/lib/api/plans.functions";
+import type { PlanItem } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/reports/new")({
+  validateSearch: (search: Record<string, unknown>) => {
+    const reportId = typeof search.reportId === "string" ? search.reportId : undefined;
+    return reportId ? { reportId } : {};
+  },
   head: () => ({
     meta: [
       { title: "Новый отчёт — СОКОЛ" },
@@ -27,8 +34,12 @@ export const Route = createFileRoute("/reports/new")({
 });
 
 const now = new Date();
-const defaultStart = format(new Date(now.getFullYear(), now.getMonth(), 1), "dd.MM.yyyy");
-const defaultEnd = format(new Date(now.getFullYear(), now.getMonth() + 1, 0), "dd.MM.yyyy");
+const defaultStart = withDay(now.getFullYear(), now.getMonth(), 1);
+const defaultEnd = withDay(now.getFullYear(), now.getMonth() + 1, 0);
+
+function withDay(year: number, month: number, day: number): string {
+  return format(new Date(year, month, day), "dd.MM.yyyy");
+}
 
 function formatPlanItemShort(item: PlanItem): string {
   const parts: string[] = [];
@@ -39,56 +50,252 @@ function formatPlanItemShort(item: PlanItem): string {
   return parts.join(" ");
 }
 
+function ruToIso(dateStr: string): string {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(dateStr.trim());
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+}
+
+function isoToRu(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : "";
+}
+
+function parseDate(dateStr: string): Date | null {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(dateStr.trim());
+  if (!m) return null;
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function timeToMinutes(t: string): number {
+  const [h, min] = t.split(":").map(Number);
+  return (h || 0) * 60 + (min || 0);
+}
+
+function dateOverlapsAbsence(d: Date, absences: SchedulePeriodDto["absences"]): boolean {
+  return absences.some((a) => {
+    const start = new Date(`${a.start_date}T00:00:00`);
+    const end = new Date(`${a.end_date}T00:00:00`);
+    return d >= start && d <= end;
+  });
+}
+
+function calcWeeklyHours(
+  periods: SchedulePeriodDto[],
+  periodStart: string,
+  periodEnd: string,
+): number {
+  const start = parseDate(periodStart);
+  const end = parseDate(periodEnd);
+  if (!start || !end) return 0;
+
+  const overlapping = periods.filter((sp) => {
+    if (sp.status === "archived") return false;
+    const spStart = new Date(`${sp.period_start}T00:00:00`);
+    const spEnd = new Date(`${sp.period_end}T00:00:00`);
+    return spStart <= end && spEnd >= start;
+  });
+
+  if (overlapping.length === 0) return 0;
+
+  const minutesByDay: Record<number, number> = {};
+  for (const period of overlapping) {
+    for (const item of period.items ?? []) {
+      minutesByDay[item.day_of_week] =
+        (minutesByDay[item.day_of_week] ?? 0) +
+        (timeToMinutes(item.end_time) - timeToMinutes(item.start_time));
+    }
+  }
+
+  const absences = overlapping.flatMap((p) => p.absences ?? []);
+
+  const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  const totalWeeks = totalDays / 7;
+
+  let absenceMinutes = 0;
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const jsDay = cursor.getDay();
+    const dow = jsDay === 0 ? 7 : jsDay;
+    if (minutesByDay[dow] && dateOverlapsAbsence(cursor, absences)) {
+      absenceMinutes += minutesByDay[dow];
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const totalScheduledMinutes =
+    Object.values(minutesByDay).reduce((a, b) => a + b, 0) * totalWeeks;
+  const effectiveMinutes = totalScheduledMinutes - absenceMinutes;
+
+  if (totalWeeks <= 0) return 0;
+  return Math.round((effectiveMinutes / totalWeeks / 60) * 10) / 10;
+}
+
 function NewReportPage() {
   const { loading } = useAuthGuard();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const template = monthlyReportTemplate;
+  const search = useSearch({ from: "/reports/new" });
+  const editReportId = search.reportId;
 
-  const coachGroups = useMemo(() => {
-    if (!user?.id) return [];
-    return groups.filter((gr) => gr.coachId === user.id);
-  }, [user]);
+  const [template, setTemplate] = useState<ReportTemplateDto | null>(null);
+  const [editing, setEditing] = useState<ReportDto | null>(null);
+  const [coachGroups, setCoachGroups] = useState<GroupDto[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [periodStart, setPeriodStart] = useState(defaultStart);
   const [periodEnd, setPeriodEnd] = useState(defaultEnd);
-  const [form, setForm] = useState<Record<string, string>>({
-    athletes_count: "",
-    hours_per_week: "",
-    special_events: "",
-    sport_events: "",
-    development_events: "",
-  });
-
+  const [form, setForm] = useState<Record<string, string>>({});
   const [autoFilled, setAutoFilled] = useState<Record<string, boolean>>({});
 
-  // ── Plan hints ──────────────────────────────────────────────────────────
-  const monthName = useMemo(() => getMonthNameFromDate(periodStart), [periodStart]);
+  const coachUserIds = coachGroups
+    .map((g) => g.coach_user_id)
+    .filter((id): id is string => Boolean(id));
 
-  const planItems = useMemo(() => {
-    if (!user?.id || !monthName) return null;
-    return getPlanItemsForMonth(user.id, monthName);
-  }, [user, monthName]);
+  // ── Initial load: template + coach context ──────────────────────────────
+  useEffect(() => {
+    async function boot() {
+      try {
+        setError(null);
+        const templates = await fetchReportTemplates();
+        const tpl = templates.find((t) => t.code === "monthly_coach_report") ?? templates[0];
+        setTemplate(tpl ?? null);
+
+        let groups: GroupDto[] = [];
+        if (user?.id) {
+          const { items } = await fetchGroups({ perPage: 1000 });
+          groups = items.filter((g) => g.coach_user_id === user.id);
+          setCoachGroups(groups);
+        }
+
+        if (editReportId) {
+          const { fetchReport } = await import("@/lib/api/reports.functions");
+          const report = await fetchReport(editReportId);
+          setEditing(report);
+          setPeriodStart(isoToRu(report.period_start));
+          setPeriodEnd(isoToRu(report.period_end));
+          const initial: Record<string, string> = {};
+          for (const key of Object.keys(report.data_json)) {
+            const v = report.data_json[key];
+            if (typeof v === "number") initial[key] = String(v);
+            else if (typeof v === "string") initial[key] = v;
+          }
+          setForm(initial);
+        } else {
+          const initial: Record<string, string> = {};
+          for (const f of tpl?.structure_json?.fields ?? []) initial[f.key] = "";
+          setForm(initial);
+        }
+      } catch (err) {
+        console.error("Ошибка загрузки формы отчёта:", err);
+        setError("Не удалось подготовить форму отчёта.");
+      }
+    }
+    void boot();
+  }, [editReportId, user?.id]);
+
+  // ── Plan hints ──────────────────────────────────────────────────────────
+  const periodDate = useMemo(() => parseDate(periodStart), [periodStart]);
+  const monthNum = periodDate ? periodDate.getMonth() + 1 : null;
+  const monthNameRu = monthNum ? monthName(monthNum) : "";
+
+  const [planHints, setPlanHints] = useState<{
+    category3: PlanItem[];
+    category4: PlanItem[];
+    category5: PlanItem[];
+  }>({ category3: [], category4: [], category5: [] });
 
   // ── Auto-fill #1: athletes count (≤21) ─────────────────────────────────
   useEffect(() => {
-    if (!user?.id) return;
-    const count = countAthletesUnder21(user.id);
-    setForm((prev) => ({ ...prev, athletes_count: String(count) }));
-    setAutoFilled((prev) => ({ ...prev, athletes_count: true }));
-  }, [user]);
+    let cancelled = false;
+    async function calcAthletes() {
+      if (!user?.id || !editReportId) return;
+      if (editing?.data_json?.athletes_count != null) return;
+      try {
+        const groupIds = coachGroups.map((g) => g.id);
+        const athleteIds = new Set<string>();
+        for (const g of coachGroups) for (const id of g.athlete_ids) athleteIds.add(id);
+        if (groupIds.length === 0) {
+          if (!cancelled) {
+            setForm((prev) => (prev.athletes_count?.trim() ? prev : { ...prev, athletes_count: "0" }));
+            setAutoFilled((prev) => ({ ...prev, athletes_count: true }));
+          }
+          return;
+        }
+        const { items } = await fetchAthletes({ coachId: user.id });
+        const count = items.filter(
+          (a) =>
+            a.status === "active" &&
+            athleteIds.has(a.id) &&
+            calcAge(a.birth_date) <= 21,
+        ).length;
+        if (!cancelled) {
+          setForm((prev) => (prev.athletes_count?.trim() ? prev : { ...prev, athletes_count: String(count) }));
+          setAutoFilled((prev) => ({ ...prev, athletes_count: true }));
+        }
+      } catch (err) {
+        console.error("Ошибка расчёта спортсменов:", err);
+      }
+    }
+    void calcAthletes();
+    return () => { cancelled = true; };
+  }, [user, coachGroups, editReportId, editing]);
 
   // ── Auto-fill #2: weekly hours from schedule ────────────────────────────
-  const recalcHours = useCallback(() => {
-    if (!user?.id) return;
-    const hrs = calculateWeeklyHours(user.id, periodStart, periodEnd);
-    setForm((prev) => ({ ...prev, hours_per_week: String(hrs) }));
-    setAutoFilled((prev) => ({ ...prev, hours_per_week: true }));
-  }, [user, periodStart, periodEnd]);
+  const recalcHours = useCallback(async () => {
+    if (!user?.id || editReportId) return;
+    try {
+      const periods = await fetchSchedulePeriods({ coach_user_id: user.id });
+      const hrs = calcWeeklyHours(periods, periodStart, periodEnd);
+      setForm((prev) => (prev.hours_per_week?.trim() ? prev : { ...prev, hours_per_week: String(hrs) }));
+      setAutoFilled((prev) => ({ ...prev, hours_per_week: true }));
+    } catch (err) {
+      console.error("Ошибка расчёта часов:", err);
+    }
+  }, [user, periodStart, periodEnd, editReportId]);
 
   useEffect(() => {
-    recalcHours();
+    void recalcHours();
   }, [recalcHours]);
+
+  // ── Auto-fill #3: plan hints for textarea fields ────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHints() {
+      if (!monthNum || editReportId) return;
+      try {
+        const plans = await fetchPlans({ centerId: user?.centerId });
+        const currentYear = new Date().getFullYear();
+        const plan = plans.find(
+          (p) =>
+            p.coachId === user?.id &&
+            p.year === currentYear &&
+            (p.status === "approved" || p.status === "submitted"),
+        );
+        if (!plan || cancelled) return;
+        const items = plan.items.filter(
+          (i) =>
+            i.status === "approved" || i.status === "submitted",
+        );
+        // filter by current month via date field
+        const monthItems = items.filter((i) => {
+          const d = i.date ? new Date(i.date) : null;
+          if (d && !Number.isNaN(d.getTime())) return d.getMonth() + 1 === monthNum;
+          return i.month === monthNameRu;
+        });
+        setPlanHints({
+          category3: monthItems.filter((i) => i.categoryId === "3"),
+          category4: monthItems.filter((i) => i.categoryId === "4"),
+          category5: monthItems.filter((i) => i.categoryId === "5"),
+        });
+      } catch (err) {
+        console.error("Ошибка загрузки плана:", err);
+      }
+    }
+    void loadHints();
+    return () => { cancelled = true; };
+  }, [monthNum, editReportId, user?.id, user?.centerId]);
 
   // ── Handlers ────────────────────────────────────────────────────────────
   const handleChange = (key: string, value: string) => {
@@ -96,39 +303,73 @@ function NewReportPage() {
     setAutoFilled((prev) => ({ ...prev, [key]: false }));
   };
 
-  const fillFromPlan = (fieldKey: string, items: PlanItem[]) => {
-    if (items.length === 0) return;
-    const text = items
+  const fillFromPlan = (fieldKey: string, hasPlan: PlanItem[]) => {
+    if (hasPlan.length === 0) return;
+    const text = hasPlan
       .map((item, i) => `${i + 1}. ${formatPlanItemShort(item)}`)
       .join("\n");
     setForm((prev) => ({ ...prev, [fieldKey]: text }));
     setAutoFilled((prev) => ({ ...prev, [fieldKey]: false }));
   };
 
-  const save = (status: "draft" | "submitted") => {
-    const id = freshReportId();
-    const r = {
-      id,
-      templateId: template.id,
-      coachId: user?.id ?? "",
-      coachName: user?.coachName ?? "",
-      coachInitials: (user?.coachName ?? "").split(" ").map((n) => n[0]).join("").slice(0, 2),
-      sport: user?.coachDiscipline ?? "",
-      group: coachGroups.map((g) => g.name).join(", "),
-      centerId: user?.centerId ?? "center-1",
-      periodStart,
-      periodEnd,
-      data: { ...form, athletes_count: Number(form.athletes_count), hours_per_week: Number(form.hours_per_week) },
-      status,
-      createdAt: format(new Date(), "dd.MM.yyyy"),
-      submittedAt: status === "submitted" ? format(new Date(), "dd.MM.yyyy") : undefined,
-    };
-    reports.push(r);
-    persistReports();
-    navigate({ to: "/reports" });
+  const save = async (submitNow: boolean) => {
+    if (!template || !periodStart || !periodEnd) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const data: Record<string, string | number> = {
+        ...form,
+        athletes_count: Number(form.athletes_count) || 0,
+        hours_per_week: Number(form.hours_per_week) || 0,
+      };
+      const periodStartIso = ruToIso(periodStart);
+      const periodEndIso = ruToIso(periodEnd);
+      if (!periodStartIso || !periodEndIso) {
+        setError("Даты периода указаны неверно (ожидается ДД.ММ.ГГГГ).");
+        setSaving(false);
+        return;
+      }
+
+      if (editing) {
+        await updateReport(editing.id, {
+          period_start: periodStartIso,
+          period_end: periodEndIso,
+          data_json: data,
+          period_type: "monthly",
+        });
+        if (submitNow) {
+          const { submitReport } = await import("@/lib/api/reports.functions");
+          await submitReport(editing.id);
+        }
+        navigate({ to: "/reports" });
+        return;
+      }
+
+      const payload: ReportCreatePayload = {
+        template_id: template.id,
+        period_type: "monthly",
+        period_start: periodStartIso,
+        period_end: periodEndIso,
+        data_json: data,
+      };
+      const created = await createReport(payload);
+      if (submitNow) {
+        const { submitReport } = await import("@/lib/api/reports.functions");
+        await submitReport(created.id);
+      }
+      navigate({ to: "/reports" });
+    } catch (err) {
+      console.error("Ошибка сохранения отчёта:", err);
+      setError("Не удалось сохранить отчёт. Попробуйте ещё раз.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const isValid = form.athletes_count.trim() !== "" && form.hours_per_week.trim() !== "";
+  const requiredKeys = ["athletes_count", "hours_per_week"];
+  const isValid =
+    requiredKeys.every((k) => form[k]?.trim() !== "") &&
+    Boolean(periodStart.trim()) && Boolean(periodEnd.trim());
 
   if (loading) {
     return (
@@ -138,15 +379,25 @@ function NewReportPage() {
     );
   }
 
+  if (!template) {
+    return (
+      <AppShell title="Новый отчёт" subtitle="Ежемесячный отчёт тренера-преподавателя ЦСЕ">
+        <p className="text-sm text-destructive">{error ?? "Шаблон отчёта не найден."}</p>
+      </AppShell>
+    );
+  }
+
+  const fields: ReportFieldDto[] = template?.structure_json?.fields ?? [];
+
   const planHintMap: Record<string, PlanItem[] | undefined> = {
-    special_events: planItems?.category3,
-    sport_events: planItems?.category4,
-    development_events: planItems?.category5,
+    special_events: planHints.category3,
+    sport_events: planHints.category4,
+    development_events: planHints.category5,
   };
 
   return (
     <AppShell
-      title="Новый отчёт"
+      title={editing ? "Редактирование отчёта" : "Новый отчёт"}
       subtitle="Ежемесячный отчёт тренера-преподавателя ЦСЕ"
     >
       <div className="mb-6 flex items-center justify-between">
@@ -164,18 +415,27 @@ function NewReportPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={() => save("draft")} disabled={!isValid}>
-            <Save className="mr-1.5 h-4 w-4" /> Сохранить черновик
+          <Button variant="outline" onClick={() => save(false)} disabled={!isValid || saving}>
+            <Save className="mr-1.5 h-4 w-4" /> {editing ? "Сохранить" : "Сохранить черновик"}
           </Button>
           <Button
             className="bg-primary text-primary-foreground hover:bg-primary/90"
-            onClick={() => save("submitted")}
-            disabled={!isValid}
+            onClick={() => save(true)}
+            disabled={!isValid || saving}
           >
             <Send className="mr-1.5 h-4 w-4" /> Отправить на проверку
           </Button>
+          {coachUserIds.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => void recalcHours()} disabled={saving}>
+              <RefreshCw className="mr-1 h-3.5 w-3.5" /> Пересчитать
+            </Button>
+          )}
         </div>
       </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>
+      )}
 
       <Card className="shadow-[var(--shadow-card)]">
         <div className="border-b border-border p-6">
@@ -200,7 +460,7 @@ function NewReportPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Вид спорта</label>
-              <Input className="h-9" value={user?.coachDiscipline ?? ""} readOnly />
+              <Input className="h-9" value={editing?.sport ?? (coachGroups[0]?.sport_type ?? "")} readOnly />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Группа</label>
@@ -218,13 +478,13 @@ function NewReportPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">ФИО тренера</label>
-              <Input className="h-9" value={user?.coachName ?? ""} readOnly />
+              <Input className="h-9" value={editing?.coach_name ?? user?.coachName ?? ""} readOnly />
             </div>
           </div>
         </div>
 
         <div className="space-y-6 p-6">
-          {template.fields.map((field) => {
+          {fields.map((field) => {
             const planItemsForField = planHintMap[field.key];
             const hasPlanItems = planItemsForField && planItemsForField.length > 0;
 
@@ -232,7 +492,7 @@ function NewReportPage() {
               <div key={field.key}>
                 <label className="mb-1.5 flex items-baseline gap-2 text-sm font-medium text-secondary">
                   <span className="h-5 w-5 flex-shrink-0 rounded-full bg-primary/10 text-center text-[10px] leading-5 text-primary">
-                    {template.fields.indexOf(field) + 1}
+                    {fields.indexOf(field) + 1}
                   </span>
                   {field.label}
                   {autoFilled[field.key] && (
@@ -250,7 +510,7 @@ function NewReportPage() {
                     type="number"
                     min={0}
                     placeholder="0"
-                    value={form[field.key]}
+                    value={form[field.key] ?? ""}
                     onChange={(e) => handleChange(field.key, e.target.value)}
                     className="h-10 w-32"
                   />
@@ -260,7 +520,7 @@ function NewReportPage() {
                       <div className="mb-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
                         <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-primary">
                           <Lightbulb className="h-3.5 w-3.5" />
-                          Запланировано на {monthName}:
+                          Запланировано на {monthNameRu}:
                         </div>
                         <ul className="mb-2 space-y-1 text-xs text-muted-foreground">
                           {planItemsForField!.map((item) => (
@@ -282,7 +542,7 @@ function NewReportPage() {
                       </div>
                     )}
                     <textarea
-                      value={form[field.key]}
+                      value={form[field.key] ?? ""}
                       onChange={(e) => handleChange(field.key, e.target.value)}
                       placeholder={
                         hasPlanItems

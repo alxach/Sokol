@@ -1,9 +1,137 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { apiFetch } from "@/lib/api/client";
 import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
   WidthType, AlignmentType, BorderStyle, VerticalAlign, convertInchesToTwip,
 } from "docx";
+
+export type ReportStatus = "draft" | "submitted" | "approved" | "rejected";
+
+export interface ReportFieldDto {
+  key: string;
+  label: string;
+  type: "number" | "text" | "textarea";
+  norm: string;
+  confirmationForm?: "mandatory_in_report" | "on_request" | "none";
+  normFull?: number | null;
+  normBasic?: number | null;
+  unit?: string;
+}
+
+export interface ReportTemplateDto {
+  id: string;
+  name: string;
+  code: string;
+  report_type: string;
+  structure_json: { fields: ReportFieldDto[] };
+  description: string | null;
+}
+
+export interface ReportDto {
+  id: string;
+  template_id: string;
+  author_id: string;
+  center_id: string | null;
+  coach_id: string | null;
+  program_id: string | null;
+  payout_tier: number | null;
+  commission_protocol_id: string | null;
+  period_type: string;
+  period_start: string;
+  period_end: string;
+  data_json: Record<string, string | number>;
+  status: ReportStatus;
+  reviewer_id: string | null;
+  review_comment: string | null;
+  reviewed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  template_name: string | null;
+  coach_name: string | null;
+  coach_user_id: string | null;
+  author_name: string | null;
+  center_name: string | null;
+  center_city: string | null;
+  sport: string | null;
+}
+
+export interface ReportCreatePayload {
+  template_id: string;
+  period_type: string;
+  period_start: string;
+  period_end: string;
+  data_json: Record<string, string | number>;
+  center_id?: string;
+  coach_id?: string;
+}
+
+export interface ReportUpdatePayload {
+  period_type?: string;
+  period_start?: string;
+  period_end?: string;
+  data_json?: Record<string, string | number>;
+}
+
+export async function fetchReportTemplates(): Promise<ReportTemplateDto[]> {
+  return apiFetch<ReportTemplateDto[]>("/reports/templates");
+}
+
+export async function fetchReports(params: {
+  page?: number;
+  perPage?: number;
+  centerId?: string | null;
+  coachUserId?: string | null;
+} = {}): Promise<{ items: ReportDto[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params.page) qs.set("page", String(params.page));
+  if (params.perPage) qs.set("per_page", String(params.perPage ?? 1000));
+  if (params.centerId) qs.set("center_id", params.centerId);
+  if (params.coachUserId) qs.set("coach_user_id", params.coachUserId);
+  const query = qs.size ? `?${qs.toString()}` : "";
+  const [items, total] = await apiFetch<[ReportDto[], number]>(`/reports${query}`);
+  return { items, total };
+}
+
+export async function fetchReport(reportId: string): Promise<ReportDto> {
+  return apiFetch<ReportDto>(`/reports/${reportId}`);
+}
+
+export async function createReport(payload: ReportCreatePayload): Promise<ReportDto> {
+  return apiFetch<ReportDto>("/reports", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateReport(
+  reportId: string,
+  payload: ReportUpdatePayload,
+): Promise<ReportDto> {
+  return apiFetch<ReportDto>(`/reports/${reportId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteReport(reportId: string): Promise<void> {
+  await apiFetch(`/reports/${reportId}`, { method: "DELETE" });
+}
+
+export async function submitReport(reportId: string): Promise<ReportDto> {
+  return apiFetch<ReportDto>(`/reports/${reportId}/submit`, { method: "POST" });
+}
+
+export async function approveReport(reportId: string): Promise<ReportDto> {
+  return apiFetch<ReportDto>(`/reports/${reportId}/approve`, { method: "POST" });
+}
+
+export async function rejectReport(reportId: string, comment: string): Promise<ReportDto> {
+  return apiFetch<ReportDto>(`/reports/${reportId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ comment }),
+  });
+}
 
 const reportDataSchema = z.object({
   reportId: z.string(),

@@ -183,6 +183,19 @@ class ScheduleService:
         for pid, items in items_map.items():
             counts[pid] = len(items)
         snapshots = await self._enrich_periods(periods, counts)
+        for snap in snapshots:
+            pid = snap["id"]
+            snap["items"] = [
+                {
+                    "id": str(s.id),
+                    "day_of_week": s.day_of_week,
+                    "start_time": s.start_time.strftime("%H:%M") if s.start_time else "",
+                    "end_time": s.end_time.strftime("%H:%M") if s.end_time else "",
+                    "room": s.room,
+                    "location": s.location,
+                }
+                for s in items_map.get(pid, [])
+            ]
         return {"items": snapshots, "total": len(snapshots), "page": page, "per_page": per_page}
 
     async def get_period(self, period_id: str) -> dict:
