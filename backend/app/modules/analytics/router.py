@@ -18,3 +18,11 @@ async def dashboard(
 ):
     service = AnalyticsService(session)
     return await service.get_dashboard()
+
+
+@router.get("/summary")
+async def summary(
+    session: AsyncSession = Depends(get_session),
+):
+    service = AnalyticsService(session)
+    return await service.get_summary()

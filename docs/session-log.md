@@ -259,3 +259,13 @@
 **Грабли:** legacy POST /schedules требует center_id (пустой центр группы → 500); первый прогон создал лишние region/center — удалены; коуч-профиль тренера уже существовал (unique user_id) — переиспользован вместе с его центром. vite dev поднялся на 8082 (8080/8081 заняты).
 
 **Roadmap:** строка «Посещаемость» обновлена (backend API + frontend без моков + pytest 76/76 + смоук).
+
+
+## 2026-08-29 — Модуль «Аналитика» на реальном API
+
+**Backend:** AnalyticsService.get_summary() + GET /analytics/summary (admin/director). KPI (спортсмены/тренеры/события не-cancelled/медали), athletes_by_status (русские лейблы), athletes_by_discipline, medal_dynamics за 12 месяцев (классификация из Result.medal gold/silver/bronze через Event.start_date), coach_workload (имя из User через Coach.user_id), top_athletes по очкам (3/2/1). pytest 78/78 (+test_analytics_summary.py).
+
+**Frontend:** nalytics.functions.ts, 
+outes/analytics.tsx без моков (KPI, пай-чарты, area, бар, топ-таблица, empty-state, загрузка/ошибка, заглушка не-админам). vite build + tsc OK (legacy-ошибки только exports.functions.ts).
+
+**Смоук (admin):** KPI 3/1/1/2, «Активные 3», «Дзюдо 3», медаль в Июл по AreaChart, нагрузка «Соколова Марина», топ Ana 3 очка / Bob 2 очка. Данные созданы/очищены через API. Консоль без ошибок (только a11y). Uvicorn перезапущен с --reload (старый код без нового роутера давал 404).
