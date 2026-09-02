@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { ArrowLeft, Send, Save, Lightbulb, ClipboardList, RefreshCw } from "lucide-react";
+import { ArrowLeft, Send, Save, Lightbulb, ClipboardList, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,9 @@ import { fetchGroups, type GroupDto } from "@/lib/api/groups.functions";
 import { fetchAthletes, calcAge } from "@/lib/api/athletes.functions";
 import { fetchSchedulePeriods, type SchedulePeriodDto } from "@/lib/api/schedules.functions";
 import { fetchPlans, monthName } from "@/lib/api/plans.functions";
-import type { PlanItem } from "@/lib/mock-data";
+import { fetchCriteria, type CoachTier } from "@/lib/api/criteria.functions";
+import type { PlanItem } from "@/lib/api/plans.functions";
+import { fetchTrainings, type TrainingDto } from "@/lib/api/trainings.functions";
 
 export const Route = createFileRoute("/reports/new")({
   validateSearch: (search: Record<string, unknown>) => {
@@ -47,6 +49,17 @@ function formatPlanItemShort(item: PlanItem): string {
   parts.push(item.name);
   if (item.location) parts.push(`(${item.location})`);
   if (item.participantsCount) parts.push(`— ${item.participantsCount} уч.`);
+  return parts.join(" ");
+}
+
+function formatTrainingShort(t: TrainingDto): string {
+  const parts: string[] = [];
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t.date);
+  parts.push(d ? `${d[3]}.${d[2]}.${d[1]}` : t.date);
+  parts.push("Тренировка с сотрудниками РУСАЛа");
+  if (t.location) parts.push(`(${t.location})`);
+  if (t.participants_count != null) parts.push(`— ${t.participants_count} уч.`);
+  if (t.goal) parts.push(`— ${t.goal}`);
   return parts.join(" ");
 }
 
@@ -143,6 +156,7 @@ function NewReportPage() {
   const [coachGroups, setCoachGroups] = useState<GroupDto[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [coachTier, setCoachTier] = useState<CoachTier | null>(null);
 
   const [periodStart, setPeriodStart] = useState(defaultStart);
   const [periodEnd, setPeriodEnd] = useState(defaultEnd);
@@ -187,6 +201,14 @@ function NewReportPage() {
           for (const f of tpl?.structure_json?.fields ?? []) initial[f.key] = "";
           setForm(initial);
         }
+
+        try {
+          const criteriaList = await fetchCriteria();
+          const rec = criteriaList[0];
+          setCoachTier(rec?.assigned_tier ?? null);
+        } catch {
+          /* тир выплаты — необязательный блок */
+        }
       } catch (err) {
         console.error("Ошибка загрузки формы отчёта:", err);
         setError("Не удалось подготовить форму отчёта.");
@@ -205,6 +227,8 @@ function NewReportPage() {
     category4: PlanItem[];
     category5: PlanItem[];
   }>({ category3: [], category4: [], category5: [] });
+
+  const [trainingHints, setTrainingHints] = useState<TrainingDto[]>([]);
 
   // ── Auto-fill #1: athletes count (≤21) ─────────────────────────────────
   useEffect(() => {
@@ -297,6 +321,31 @@ function NewReportPage() {
     return () => { cancelled = true; };
   }, [monthNum, editReportId, user?.id, user?.centerId]);
 
+  // ── Auto-fill #3b: confirmed trainings for sport_events ────────────────
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTrainings() {
+      if (editReportId) return;
+      const startIso = ruToIso(periodStart);
+      const endIso = ruToIso(periodEnd);
+      if (!startIso || !endIso) return;
+      try {
+        const items = await fetchTrainings({
+          date_from: startIso,
+          date_to: endIso,
+          status: "confirmed",
+          per_page: 200,
+        });
+        const own = items.filter((t) => !user?.id || t.coach_user_id === user.id);
+        if (!cancelled) setTrainingHints(own);
+      } catch (err) {
+        console.error("Ошибка загрузки тренировок:", err);
+      }
+    }
+    void loadTrainings();
+    return () => { cancelled = true; };
+  }, [editReportId, periodStart, periodEnd, user?.id]);
+
   // ── Handlers ────────────────────────────────────────────────────────────
   const handleChange = (key: string, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -307,6 +356,15 @@ function NewReportPage() {
     if (hasPlan.length === 0) return;
     const text = hasPlan
       .map((item, i) => `${i + 1}. ${formatPlanItemShort(item)}`)
+      .join("\n");
+    setForm((prev) => ({ ...prev, [fieldKey]: text }));
+    setAutoFilled((prev) => ({ ...prev, [fieldKey]: false }));
+  };
+
+  const fillFromTrainings = (fieldKey: string, items: TrainingDto[]) => {
+    if (items.length === 0) return;
+    const text = items
+      .map((t, i) => `${i + 1}. ${formatTrainingShort(t)}`)
       .join("\n");
     setForm((prev) => ({ ...prev, [fieldKey]: text }));
     setAutoFilled((prev) => ({ ...prev, [fieldKey]: false }));
@@ -437,6 +495,24 @@ function NewReportPage() {
         <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>
       )}
 
+      {coachTier === null ? (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+          <span>
+            Выплата не назначена: руководитель центра ещё не выбрал для вас тир (базовый/полный). Отчёт можно подать,
+            но сумма по нему составит 0 ₽.
+          </span>
+        </div>
+      ) : (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-600" />
+          <span>
+            Тир выплаты: <span className="font-semibold">{coachTier === "full" ? "полный" : "базовый"}</span>.
+            При выполнении норм отчёта сумма составит максимум (полный) или минимум (базовый) активной программы.
+          </span>
+        </div>
+      )}
+
       <Card className="shadow-[var(--shadow-card)]">
         <div className="border-b border-border p-6">
           <div className="grid gap-4 md:grid-cols-4">
@@ -487,6 +563,7 @@ function NewReportPage() {
           {fields.map((field) => {
             const planItemsForField = planHintMap[field.key];
             const hasPlanItems = planItemsForField && planItemsForField.length > 0;
+            const hasTrainingHints = field.key === "sport_events" && trainingHints.length > 0;
 
             return (
               <div key={field.key}>
@@ -516,6 +593,31 @@ function NewReportPage() {
                   />
                 ) : (
                   <>
+                    {hasTrainingHints && (
+                      <div className="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                        <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-emerald-800">
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Подтверждённые тренировки РУСАЛ за период:
+                        </div>
+                        <ul className="mb-2 space-y-1 text-xs text-muted-foreground">
+                          {trainingHints.map((t) => (
+                            <li key={t.id} className="flex items-start gap-1.5">
+                              <span className="mt-0.5 h-1 w-1 flex-shrink-0 rounded-full bg-emerald-500/50" />
+                              {formatTrainingShort(t)}
+                            </li>
+                          ))}
+                        </ul>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1 text-xs text-emerald-800 hover:text-emerald-900"
+                          onClick={() => fillFromTrainings(field.key, trainingHints)}
+                        >
+                          <ClipboardList className="h-3 w-3" />
+                          Заполнить из тренировок
+                        </Button>
+                      </div>
+                    )}
                     {hasPlanItems && (
                       <div className="mb-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
                         <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-primary">

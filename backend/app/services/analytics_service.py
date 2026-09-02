@@ -12,10 +12,7 @@ from app.models.user import User
 
 STATUS_LABELS = {
     "active": "Активные",
-    "inactive": "Не тренируется",
-    "graduated": "Выпустился",
-    "transferred": "Переведён",
-    "expelled": "Отчислен",
+    "inactive": "В архиве",
 }
 
 

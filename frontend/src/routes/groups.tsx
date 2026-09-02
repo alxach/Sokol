@@ -357,17 +357,22 @@ function GroupsPage() {
                     const otherGroupName = inOther
                       ? groups.find((g) => g.athlete_ids.includes(a.id) && g.id !== editGroupId)?.name
                       : null;
+                    const left = a.status === "inactive";
+                    const disabled = !!inOther || left;
+                    const reason = left
+                      ? "В архиве"
+                      : (inOther ? `В группе: ${otherGroupName ?? "—"}` : "");
                     return (
                       <label
                         key={a.id}
                         className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition hover:bg-muted/40 ${
-                          inOther ? "opacity-50" : ""
+                          disabled ? "opacity-50" : ""
                         }`}
                       >
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={!!inOther}
+                          disabled={disabled}
                           onChange={() => {
                             setEditAthleteIds((prev) =>
                               checked ? prev.filter((p) => p !== a.id) : [...prev, a.id],
@@ -377,7 +382,7 @@ function GroupsPage() {
                         />
                         <span className="text-secondary">{athleteFullName(a)}</span>
                         <span className="ml-auto text-xs text-muted-foreground">
-                          {inOther ? `В группе: ${otherGroupName ?? "—"}` : (a.rank ?? `${calcAge(a.birth_date)} лет`)}
+                          {reason || (a.rank ?? `${calcAge(a.birth_date)} лет`)}
                         </span>
                       </label>
                     );
@@ -519,7 +524,12 @@ function AddAthleteModal({
   const [search, setSearch] = useState("");
 
   const freeAthletes = useMemo(
-    () => candidates.filter((a) => !occupiedIds.has(a.id)),
+    () =>
+      candidates.filter(
+        (a) =>
+          !occupiedIds.has(a.id) &&
+          a.status !== "inactive",
+      ),
     [candidates, occupiedIds],
   );
 

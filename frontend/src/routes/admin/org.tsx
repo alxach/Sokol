@@ -403,10 +403,10 @@ function AdminOrgPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Регион</Label>
-              <Select value={centerForm.region_id} onValueChange={(v) => setCenterForm({ ...centerForm, region_id: v })}>
+              <Select value={centerForm.region_id} onValueChange={(v) => setCenterForm({ ...centerForm, region_id: v === "none" ? "" : v })}>
                 <SelectTrigger><SelectValue placeholder="Без региона" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Без региона</SelectItem>
+                  <SelectItem value="none">Без региона</SelectItem>
                   {regions.map((r) => (
                     <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
                   ))}

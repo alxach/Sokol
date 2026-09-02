@@ -1,11 +1,6 @@
 import { apiFetch } from "@/lib/api/client";
 
-export type AthleteStatusKey =
-  | "active"
-  | "inactive"
-  | "graduated"
-  | "transferred"
-  | "expelled";
+export type AthleteStatusKey = "active" | "inactive";
 
 export interface AthleteDto {
   id: string;
@@ -37,6 +32,7 @@ export interface AthleteCreatePayload {
   center_id?: string;
   coach_id?: string;
   sport_type: string;
+  rank?: string;
   notes?: string;
 }
 
@@ -67,11 +63,8 @@ export function athleteFullName(a: Pick<AthleteDto, "last_name" | "first_name" |
 }
 
 export const athleteStatusLabels: Record<AthleteStatusKey, string> = {
-  active: "Активный",
-  inactive: "Не тренируется",
-  graduated: "Выпустился",
-  transferred: "Переведён",
-  expelled: "Отчислен",
+  active: "Активен",
+  inactive: "В архиве",
 };
 
 export async function fetchAthletes(params: {
@@ -109,4 +102,14 @@ export async function updateAthlete(
 
 export async function deleteAthlete(athleteId: string): Promise<void> {
   await apiFetch(`/athletes/${athleteId}`, { method: "DELETE" });
+}
+
+export async function transferAthlete(
+  athleteId: string,
+  newCoachId: string,
+): Promise<AthleteDto> {
+  return apiFetch<AthleteDto>(`/athletes/${athleteId}/transfer`, {
+    method: "POST",
+    body: JSON.stringify({ new_coach_id: newCoachId }),
+  });
 }

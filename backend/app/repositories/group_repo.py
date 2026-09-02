@@ -29,6 +29,11 @@ class GroupMemberRepository(BaseRepository[GroupMember]):
         result = await self.session.execute(stmt)
         return result.rowcount > 0
 
+    async def remove_all_for_athlete(self, athlete_id) -> int:
+        stmt = delete(GroupMember).where(GroupMember.athlete_id == athlete_id)
+        result = await self.session.execute(stmt)
+        return result.rowcount or 0
+
     async def list_for_groups(self, group_ids) -> list[GroupMember]:
         if not group_ids:
             return []

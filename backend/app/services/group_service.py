@@ -1,10 +1,14 @@
 from datetime import date
 
+from fastapi import HTTPException
 from sqlalchemy import select
 
-from app.models import Center, Coach, User
+from app.models import Athlete, Center, Coach, User
 from app.repositories import GroupMemberRepository, GroupRepository
 from app.schemas.group import GroupCreate, GroupMemberAdd, GroupResponse, GroupUpdate
+
+# Статус спортсмена, который нельзя добавить в группу (архивирован)
+INELIGIBLE_FOR_GROUP = {"inactive"}
 
 
 class GroupService:
@@ -47,6 +51,15 @@ class GroupService:
         existing = await self.member_repo.find(group_id, data.athlete_id)
         if existing:
             return None
+        athlete = (
+            await self.group_repo.session.execute(
+                select(Athlete).where(Athlete.id == data.athlete_id)
+            )
+        ).scalar_one_or_none()
+        if athlete is None:
+            raise HTTPException(404, "Спортсмен не найден")
+        if athlete.status in INELIGIBLE_FOR_GROUP:
+            raise HTTPException(422, "Отчисленный или выпустившийся спортсмен не может быть добавлен в группу")
         join_date = data.join_date or date.today()
         return await self.member_repo.create(
             group_id=group_id, athlete_id=data.athlete_id, join_date=join_date,

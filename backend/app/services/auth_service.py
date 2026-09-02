@@ -106,6 +106,7 @@ class AuthService:
             "avatar_url": user.avatar_url,
             "is_active": user.is_active,
             "roles": roles,
+            "center_id": str(user.center_id) if user.center_id else None,
         }
 
     def _build_token_response(self, user: User, roles: list[str]) -> dict:
@@ -120,6 +121,6 @@ class AuthService:
                 "first_name": user.first_name,
                 "last_name": user.last_name,
                 "roles": roles,
-                "center_id": None,
+                "center_id": str(user.center_id) if user.center_id else None,
             },
         }

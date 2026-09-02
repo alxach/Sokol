@@ -65,6 +65,10 @@ export async function fetchCoaches(): Promise<CoachDto[]> {
   return fetchCoachesList();
 }
 
+export async function fetchMyCoach(): Promise<CoachDto> {
+  return apiFetch<CoachDto>("/coaches/me");
+}
+
 export async function findCoachByUserId(userId: string): Promise<CoachDto | null> {
   const coaches = await fetchCoachesList();
   return coaches.find((c) => c.user_id === userId) ?? null;
@@ -82,6 +86,13 @@ export async function updateCoach(
   payload: CoachUpdatePayload,
 ): Promise<CoachDto> {
   return apiFetch<CoachDto>(`/coaches/${coachId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateMyCoach(payload: CoachUpdatePayload): Promise<CoachDto> {
+  return apiFetch<CoachDto>("/coaches/me", {
     method: "PATCH",
     body: JSON.stringify(payload),
   });

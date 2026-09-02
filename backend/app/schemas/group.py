@@ -12,6 +12,7 @@ class GroupCreate(BaseModel):
     age_group: str | None = None
     skill_level: str | None = None
     max_capacity: int = 30
+    schedule_note: str | None = None
 
 
 class GroupUpdate(BaseModel):

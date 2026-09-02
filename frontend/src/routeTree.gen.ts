@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TrainingsRouteImport } from './routes/trainings'
 import { Route as SchedulesRouteImport } from './routes/schedules'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as ProfileRouteImport } from './routes/profile'
@@ -29,6 +30,11 @@ import { Route as AdminProgramsRouteImport } from './routes/admin/programs'
 import { Route as AdminOrgRouteImport } from './routes/admin/org'
 import { Route as AdminAuditRouteImport } from './routes/admin/audit'
 
+const TrainingsRoute = TrainingsRouteImport.update({
+  id: '/trainings',
+  path: '/trainings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SchedulesRoute = SchedulesRouteImport.update({
   id: '/schedules',
   path: '/schedules',
@@ -139,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/reports': typeof ReportsRouteWithChildren
   '/schedules': typeof SchedulesRoute
+  '/trainings': typeof TrainingsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/org': typeof AdminOrgRoute
   '/admin/programs': typeof AdminProgramsRoute
@@ -160,6 +167,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/reports': typeof ReportsRouteWithChildren
   '/schedules': typeof SchedulesRoute
+  '/trainings': typeof TrainingsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/org': typeof AdminOrgRoute
   '/admin/programs': typeof AdminProgramsRoute
@@ -182,6 +190,7 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/reports': typeof ReportsRouteWithChildren
   '/schedules': typeof SchedulesRoute
+  '/trainings': typeof TrainingsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/org': typeof AdminOrgRoute
   '/admin/programs': typeof AdminProgramsRoute
@@ -205,6 +214,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reports'
     | '/schedules'
+    | '/trainings'
     | '/admin/audit'
     | '/admin/org'
     | '/admin/programs'
@@ -226,6 +236,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reports'
     | '/schedules'
+    | '/trainings'
     | '/admin/audit'
     | '/admin/org'
     | '/admin/programs'
@@ -247,6 +258,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reports'
     | '/schedules'
+    | '/trainings'
     | '/admin/audit'
     | '/admin/org'
     | '/admin/programs'
@@ -269,6 +281,7 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   ReportsRoute: typeof ReportsRouteWithChildren
   SchedulesRoute: typeof SchedulesRoute
+  TrainingsRoute: typeof TrainingsRoute
   AdminAuditRoute: typeof AdminAuditRoute
   AdminOrgRoute: typeof AdminOrgRoute
   AdminProgramsRoute: typeof AdminProgramsRoute
@@ -277,6 +290,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/trainings': {
+      id: '/trainings'
+      path: '/trainings'
+      fullPath: '/trainings'
+      preLoaderRoute: typeof TrainingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/schedules': {
       id: '/schedules'
       path: '/schedules'
@@ -448,6 +468,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   ReportsRoute: ReportsRouteWithChildren,
   SchedulesRoute: SchedulesRoute,
+  TrainingsRoute: TrainingsRoute,
   AdminAuditRoute: AdminAuditRoute,
   AdminOrgRoute: AdminOrgRoute,
   AdminProgramsRoute: AdminProgramsRoute,

@@ -15,7 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { CategoryReference } from "@/components/category-reference";
 import { exportToExcel, importPlanFromExcel } from "@/lib/api/exports.functions";
-import { planCategories, planCategoryKeys, type Plan, type PlanItem, type PlanStatus, type PlanCategoryId } from "@/lib/mock-data";
+import { planCategories, planCategoryKeys, type PlanCategoryId } from "@/lib/plan-categories";
+import { Plan, type PlanItem, type PlanStatus } from "@/lib/api/plans.functions";
 import { monthOptions, monthOrder, monthToQuarter, quarterName, monthNumber, fetchPlans, ensurePlan, addPlanItem, submitPlanItem, approvePlanItem, rejectPlanItem, redraftPlanItem, deletePlanItem, deletePlan } from "@/lib/api/plans.functions";
 import { fetchCenters, type Center } from "@/lib/api/organizations.functions";
 
@@ -988,7 +989,7 @@ function PlanDetailModal({ plan, isAdmin, isDirector, onChanged, onClose }: { pl
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10">
       <div className="w-full max-w-4xl rounded-2xl border border-border bg-card shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -1319,7 +1320,7 @@ function ImportPreviewModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10">
       <div className="w-full max-w-5xl rounded-2xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>

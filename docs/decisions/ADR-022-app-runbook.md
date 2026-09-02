@@ -1,4 +1,4 @@
-# ADR-022: Запуск приложения — RUNBOOK локальной разработки
+# ADR-022: Запуск приложения — RUNBOOK полного стека
 
 ## Status
 Accepted
@@ -8,122 +8,101 @@ Accepted
 
 ## Context
 
-Проект «СОКОЛ» — монорепо из трёх частей: `backend/` (FastAPI + PostgreSQL + Redis), `frontend/` (TanStack Start / Vite), `infra/` (Docker-стек, nginx, продакшн). Не было ни одного актуального документа с процедурой запуска:
+Проект «СОКОЛ» — монорепо из трёх частей: `backend/` (FastAPI + PostgreSQL + Redis), `frontend/` (TanStack Start / Vite), `infra/` (Docker-стек: nginx, PostgreSQL, Redis, MinIO, бекенд, фронтенд). Полный стек разворачивается из `infra/` через Docker Compose в двух режимах — dev (с hot-reload через volumes) и prod-like (без volumes, multi-worker). Не было ни одного актуального документа с процедурой запуска.
 
-- Единственный инструктивный ADR — **ADR-009 устарел**: он описывал эпоху мок-данных и порт/URL, которые не совпадают с текущей реальностью.
-- Есть два разных docker-compose (`backend/docker-compose.dev.yml` для dev-инфраструктуры и `infra/docker-compose.yml` + `.prod.yml` для полного стека), несколько скриптов seed (`seed.py`, `seed_data.py`) — без пояснения, какой когда использовать.
-- Цепочка миграций Alembic расширилась до 8 ревизий (head `d3e4f5a6b7c8`) — нигде не зафиксирована.
-- Backend-конфиг читает `.env` из `backend/`, frontend жёстко связан с `http://localhost:8000/api/v1` (`src/lib/api/client.ts`), dev-сервер фронтенда жёстко слушает **порт 8080** (`@lovable.dev/vite-tanstack-config`, strictPort).
-
-Требуется зафиксировать воспроизводимую процедуру запуска для локальной разработки (Windows/PowerShell — среда разработки на машине, где ведётся проект), чтобы не тратить время на диагностику при каждом старте.
+Требуется зафиксировать воспроизводимую процедуру запуска полного стека (Windows/PowerShell — среда разработки на машине, где ведётся проект), чтобы не тратить время на диагностику при каждом старте.
 
 ## Decision
 
-### 1. Состав и порты
-
-| Компонент | Технология | Порт | Откуда запускается |
-|-----------|------------|------|---------------------|
-| PostgreSQL 16 | Docker `postgres:16-alpine` | 5432 | `backend/docker-compose.dev.yml` |
-| Redis 7 | Docker `redis:7-alpine` | 6379 | `backend/docker-compose.dev.yml` |
-| Backend | FastAPI + uvicorn | 8000 | venv `backend/.venv_backend` |
-| Frontend | TanStack Start (Vite) | 8080 | npm из `frontend/` |
-
-Frontend dev-сервер ходит в API по жёсткому адресу `http://localhost:8000/api/v1` (`frontend/src/lib/api/client.ts`). Изменять этот адрес через VITE_ нельзя — бейз захардкожен.
-
-### 2. Инфраструктура (DB + Redis)
+### 1. Подготовка .env
 
 ```powershell
-cd C:\Proj\Sokol\backend
-docker compose -f docker-compose.dev.yml up -d
+cd C:\Proj\Sokol\infra
+cp .env.example .env
+# Отредактируйте .env: замените все `change-me-*` на реальные секреты
+# Минимум для локального запуска:
+#   POSTGRES_PASSWORD=localdbpass
+#   REDIS_PASSWORD=localredispass
+#   MINIO_ROOT_PASSWORD=localminiopass
+#   JWT_SECRET_KEY=localjwtsecret
+#   BACKEND_SECRET_KEY=localbackendsecret
 ```
 
-- Креды контейнеров: `sokol` / `sokol`, БД `sokol`.
-- Healthcheck — `pg_isready` / `redis-cli ping`, контейнеры `backend-db-1` и `backend-redis-1`.
-- Миграции/seed идут **снаружи** контейнеров (через venv), в отличие от prod-пути, где всё делает entrypoint внутри контейнера.
-
-### 3. Миграции
-
-Цепочка из 8 ревизий, head — **`d3e4f5a6b7c8`** (`add center_id to users`):
-
-```
-<base> → af1fc816173d (init users and audit)
-      → aff04e922116 (add all modules)
-      → 07dfca3a3f88 (add vacation_start_end to coaches)
-      → 69889c273334 (add coach_vacations)
-      → aa4b60334ee5 (add incentive program, commission protocol, event plan)
-      → b1c2d3e4f5a6 (add constraints: UNIQUE, ON DELETE, CHECK)
-      → c7d8e9f0a1b2 → d3e4f5a6b7c8 (head)
-```
+### 2. Запуск (dev-режим с hot-reload через volumes)
 
 ```powershell
-cd C:\Proj\Sokol\backend
-.\.venv_backend\Scripts\alembic.exe upgrade head
+cd C:\Proj\Sokol\infra
+docker compose -f docker-compose.yml up -d --build
 ```
 
-Статус: `alembic current` (должен показать `d3e4f5a6b7c8 (head)`).
+Сервисы и порты (из `docker-compose.yml`):
 
-### 4. Seed — учётные записи
+| Сервис | Порт(ы) | Назначение |
+|--------|---------|------------|
+| nginx | 80, 443 | Reverse proxy, SSL termination, статика /media |
+| frontend | 3000 | TanStack Start (прод-сборка в dev-контейнере) |
+| backend | 8000 | FastAPI (volume `../backend:/app` — горячая перезагрузка кода) |
+| db (PostgreSQL) | 5432 | БД |
+| redis | 6379 | Кэш/сессии |
+| minio | 9000, 9001 | S3-совместимое хранилище (API + консоль) |
 
-Рекомендуется **`seed_data.py`** (идемпотентный, добавляет регионы/центры/пользователей с ролями). Легаси `seed.py` — только роли и 2 пользователя, использовать не требуется.
+- Бекенд и фронтенд монтируются как volumes — изменения в коде подхватываются без rebuild.
+- Миграции **не** выполняются автоматически в этом режиме (нет entrypoint-скрипта). Выполните отдельно:
+  ```powershell
+  docker compose -f docker-compose.yml exec backend alembic upgrade head
+  ```
+- Seed учётных записей:
+  ```powershell
+  docker compose -f docker-compose.yml exec backend python -m seed_data
+  ```
 
-```powershell
-cd C:\Proj\Sokol\backend
-.\.venv_backend\Scripts\python.exe -m seed_data
-```
-
-Тестовые учётные записи (пароль у всех **`admin123`**):
-
-| Роль | Email |
-|------|-------|
-| Суперадмин | `superadmin@sokol.ru` |
-| Руководитель всех центров (director) | `director@sokol.ru` |
-| Руководитель центра (admin), ЦСЕ Южный | `admin@sokol.ru` |
-| Тренер (coach), ЦСЕ Южный | `coach@sokol.ru` |
-
-Роли/права также досеиваются автоматически при старте бекенда (lifespan в `backend/app/main.py`).
-
-### 5. Backend
-
-```powershell
-cd C:\Proj\Sokol\backend
-.\.venv_backend\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-- Конфигурация читается из `backend/.env` (`DEBUG=true`, дефолтный JWT-секрет допустим только при `DEBUG=true` — fail-fast в `backend/app/config.py`).
-- Swagger: `http://localhost:8000/docs`. Health-проверка: `GET http://localhost:8000/api/v1/health` (если эндпоинт существует).
-- venv-интерпретатор **Python 3.14.5** (`backend/.venv_backend`), Python >= 3.12 (`pyproject.toml`).
-
-### 6. Frontend
-
-```powershell
-cd C:\Proj\Sokol\frontend
-npm run dev
-```
-
-- Сервер слушает **`http://localhost:8080`** (strictPort задан в `@lovable.dev/vite-tanstack-config`; ADR-009 с портом из эпохи моков — устарел).
-- Зависимости уже установлены (`node_modules/`); при чистом клоне — `npm install` / `npm ci`.
-- Линтинг: `npm run lint`; сборка: `npm run build` (прод-биндинг через Nitro).
-
-### 7. Верификация запуска
-
-1. `Test-NetConnection localhost -Port 5432,6379,8000,8080` — все четыре порта отвечают.
-2. Логин на `http://localhost:8080` под `admin@sokol.ru` / `admin123`.
-3. Дашборд отдаёт реальные данные (не моки) — выступает индикатором живой связки frontend ↔ backend ↔ БД.
-
-### 8. Prod-путь (для справки)
-
-Полный стек (nginx на 80/443, MinIO, бекенд/фронтенд в контейнерах) собирается из `infra/`:
+### 3. Запуск (prod-like — без volumes, multi-worker)
 
 ```powershell
 cd C:\Proj\Sokol\infra
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-Entrypoint бекенда сам выполняет `alembic upgrade head`, затем `uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4`. Локальная разработка этот путь **не требует** — достаточно шагов 2–6.
+Различия с dev-режимом (`docker-compose.prod.yml`):
+- `backend`: `target: runner` (многостадийная сборка, нет volumes), команда `alembic upgrade head && uvicorn ... --workers 4`
+- `frontend`: `target: runner` (прод-сборка Nitro, нет volumes), `NODE_ENV=production`
+- Порт фронтенда наружу — **3000** (nginx проксирует 80/443 → frontend:3000, backend:8000)
+
+### 4. Учётные записи
+
+Тестовые учётные записи (пароль у всех **`admin123`**), создаются скриптом `seed_data.py`:
+
+| Роль | Email |
+|------|-------|
+| Суперадмин | `superadmin@sokol.ru` |
+| Руководитель всех центров (director) | `director@sokol.ru` |
+| Руководитель центра (admin) | `admin@sokol.ru` |
+| Тренер (coach) | `coach@sokol.ru` |
+
+### 5. Верификация полного стека
+
+1. `Test-NetConnection localhost -Port 80,443,3000,8000,5432,6379,9000,9001`
+2. Откройте `http://localhost` (nginx) — должен открыться фронтенд через nginx.
+3. Логин под `admin@sokol.ru` / `admin123`.
+4. MinIO Console: `http://localhost:9001` (логин/пароль из `MINIO_ROOT_USER/PASSWORD`).
+5. Swagger бекенда: `http://localhost:8000/docs` (прямой доступ к бекенду минуя nginx).
+
+### 6. Остановка и очистка
+
+```powershell
+# Остановка с сохранением данных (volumes)
+docker compose -f docker-compose.yml down
+
+# Полная очистка с удалением volumes (БД, Redis, MinIO)
+docker compose -f docker-compose.yml down -v
+```
+
+### 7. Prod-путь (для справки — продакшн-окружение)
+
+То же, что §3, но на целевом сервере с реальными секретами, настроенным SSL в `infra/docker/nginx/sites/`, и без `volumes` в override-файле. Entrypoint бекенда сам выполняет `alembic upgrade head`, затем `uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4`.
 
 ## Consequences
 
-1. Запуск разработчика сводится к трём командам: Docker (шаг 2), uvicorn (шаг 5), `npm run dev` (шаг 6) — миграции и seed только при новом клоне/смене схемы.
-2. Устранено противоречие с ADR-009: зафиксированы актуальные порты (8000/8080) и факт работы фронтенда с реальным API.
-3. Зафиксирована цепочка миграций и head-ревизия — снижен риск рассинхрона схем.
-4. Негативное: порт 8080 и API-бейз `localhost:8000` захардкожены во фронтенде и конфиге lovable — перенос на другой порт/домен потребует правки кода, а не env-переменной.
+1. Запуск полного стека сводится к подготовке `.env` и команде `docker compose -f docker-compose.yml up -d --build` из `infra/`; миграции и seed — отдельными `exec`-командами (§2).
+2. Для prod-like окружения используется override `docker-compose.prod.yml` (§3); продакшн — тот же стек на целевом сервере (§7).
+3. Информация о dev-режиме (ручной запуск backend/frontend вне Docker) в этом документе не фиксируется — разворачивание идёт контейнеризированным стеком.

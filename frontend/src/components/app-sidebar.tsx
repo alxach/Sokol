@@ -13,6 +13,7 @@ import {
   Calendar,
   Building2,
   HandCoins,
+  Dumbbell,
 } from "lucide-react";
 import {
   Sidebar,
@@ -49,6 +50,7 @@ export function AppSidebar() {
 
   const adminModules: NavItem[] = [
     { title: "Тренеры", url: "/coaches", icon: UserCog },
+    { title: "Тренировки", url: "/trainings", icon: Dumbbell },
     { title: "Расписание", url: "/schedules", icon: Calendar },
     { title: "Соревнования", url: "/competitions", icon: Trophy },
     { title: "План мероприятий", url: "/plans", icon: CalendarCheck },
@@ -61,6 +63,7 @@ export function AppSidebar() {
   ];
 
   const coachModules: NavItem[] = [
+    { title: "Тренировки", url: "/trainings", icon: Dumbbell },
     { title: "Расписание", url: "/schedules", icon: Calendar },
     { title: "Соревнования", url: "/competitions", icon: Trophy },
     { title: "Мои группы", url: "/groups", icon: ClipboardList },

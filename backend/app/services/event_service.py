@@ -163,7 +163,9 @@ class EventService:
             for p, a in part_rows:
                 participants_by_comp.setdefault(str(p.competition_id), []).append({
                     "athlete_id": str(a.id),
-                    "athlete_name": f"{a.last_name} {a.first_name}".strip(),
+                    "athlete_name": " ".join(
+                        p for p in (a.last_name, a.first_name, a.middle_name or "") if p
+                    ),
                 })
                 athletes_by_id[str(a.id)] = a
             result_rows = (

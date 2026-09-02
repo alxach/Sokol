@@ -1,7 +1,10 @@
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
+
+AthleteStatus = Literal["active", "inactive"]
 
 
 class AthleteCreate(BaseModel):
@@ -13,6 +16,8 @@ class AthleteCreate(BaseModel):
     center_id: str | None = None
     coach_id: str | None = None
     sport_type: str
+    rank: str | None = None
+    status: AthleteStatus = "active"
     notes: str | None = None
 
 
@@ -24,8 +29,12 @@ class AthleteUpdate(BaseModel):
     gender: str | None = None
     sport_type: str | None = None
     rank: str | None = None
-    status: str | None = None
+    status: AthleteStatus | None = None
     notes: str | None = None
+
+
+class AthleteTransferCreate(BaseModel):
+    new_coach_id: UUID
 
 
 class AthleteResponse(BaseModel):

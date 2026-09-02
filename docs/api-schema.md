@@ -250,7 +250,7 @@ Authorization: Bearer <access_token>
 | POST | `/athletes/{id}/ranks` | Присвоить разряд | superadmin, director, admin |
 | GET | `/athletes/{id}/achievements` | Достижения | superadmin, director, admin, coach* |
 | POST | `/athletes/{id}/achievements` | Добавить достижение | superadmin, director, admin, coach* |
-| POST | `/athletes/{id}/transfer` | Перевести в другой центр | superadmin, director, admin |
+| POST | `/athletes/{id}/transfer` | Передать другому тренеру (только для `inactive`, иначе 422) | superadmin, director, admin |
 
 > \* — только своих спортсменов
 
@@ -280,9 +280,33 @@ Authorization: Bearer <access_token>
 
 ---
 
-## 8. Посещаемость
+## 8. Тренировки с сотрудниками РУСАЛа
 
 ### 8.1 Эндпоинты
+
+| Метод | Путь | Описание | Доступ |
+|-------|------|----------|--------|
+| POST | `/trainings` | Создать слот (дата/время/локация) | admin, director |
+| GET | `/trainings` | Список слотов (фильтры: center_id, date_from, date_to, status, coach_id; пагинация page/per_page ≤ 200) | superadmin, director, admin, coach* |
+| PATCH | `/trainings/{id}` | Изменить слот (только proposed) | admin, director |
+| DELETE | `/trainings/{id}` | Удалить слот (только proposed) | admin, director |
+| POST | `/trainings/{id}/select` | Тренер записывается (goal; количество участников указывается по факту позже) + авто-пункт плана кат. 4 | coach |
+| POST | `/trainings/{id}/attendance` | Указать фактическое количество участников (participants_count 1–30, только confirmed; 422 если не confirmed; coach — свою, иначе 403) + синхронизация пункта плана | coach, admin, director |
+| POST | `/trainings/{id}/cancel` | Снять тренера: confirmed → proposed, пункт плана удаляется | admin, director |
+
+> \* — coach видит только слоты своего центра. Центр-скоуп: coach → свой центр, admin → user.center_id, director/superadmin → из запроса.
+>
+> Ограничение: один слот в день на тренера (повторная запись на ту же дату → 422).
+>
+> `TrainingOut`: id, center_id, center_name, coach_id/coach_name/coach_user_id (NULL), date, start_time, location, participants_count/goal (NULL), status `proposed|confirmed|cancelled`, plan_item_id, created_by, created_at/updated_at.
+>
+> `participants_count` при записи (`select`) всегда NULL — тренер не знает явку заранее; заполняется по факту через `POST /trainings/{id}/attendance` (динапазон 1–30) и синхронно пишется в связанный `plan_items.participants_count` для подстановки в отчёт.
+
+---
+
+## 9. Посещаемость
+
+### 9.1 Эндпоинты
 
 | Метод | Путь | Описание | Доступ |
 |-------|------|----------|--------|
@@ -458,6 +482,8 @@ GET /analytics/dashboard?period=month&date_from=2026-01-01&date_to=2026-05-29&ce
 |-------|------|----------|--------|
 | GET | `/incentive/criteria` | Нормы критериев; опциональный фильтр `center_id` | coach* (свой центр), admin* (свой центр), director, superadmin |
 | PUT | `/incentive/criteria/{center_id}` | Утвердить/изменить нормы центра (10 полей full/basic; валидация basic ≤ full → 422) | admin* (свой центр), director, superadmin |
+| GET | `/incentive/coach-tiers?center_id=` | Тренеры центра с назначенным тиром (`CoachTierOut`) | admin* (свой центр), director, superadmin |
+| PUT | `/incentive/coach-tiers/{coach_id}` | Назначить тир `full`/`basic` (`CoachTierUpdate`; 422 — невалидный тир, 404 — нет тренера) | admin* (свой центр), director, superadmin |
 
 > \* — если у пользователя центр не назначен (`center_id = NULL`), возвращается пустой список; запись создаётся при первом PUT (upsert).
 

@@ -16,7 +16,6 @@ import {
   ArrowUpRight,
   Trophy,
   Users,
-  Activity,
   CalendarDays,
   Medal,
   TrendingUp,
@@ -29,28 +28,18 @@ import {
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
 import { useAuthGuard, useAuth } from "@/lib/auth";
-import { useCenter } from "@/lib/center";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { fetchPlans } from "@/lib/api/plans.functions";
-import { monthName } from "@/lib/api/plans.functions";
-import { fetchCriteria, type IncentiveCriteriaPayload } from "@/lib/api/criteria.functions";
+import { fetchPlans, monthName, type Plan } from "@/lib/api/plans.functions";
+import { fetchCriteria, type CoachTier, type IncentiveCriteria } from "@/lib/api/criteria.functions";
+import { apiFetch } from "@/lib/api/client";
 import { planAggregateStatus, planDeadlineInfo, statusConfig } from "@/routes/plans";
-import {
-  athletes,
-  schedules,
-  schedulePeriods,
-  attendanceRecords,
-  disciplineMix,
-  monthlyResults,
-  recentActivity,
-  competitions,
-  centers,
-  getCenterIdByCity,
-  getPeriodStatus,
-  getGroupName,
-  type Plan,
-} from "@/lib/mock-data";
+import { fetchAthletes } from "@/lib/api/athletes.functions";
+import { fetchCompetitions } from "@/lib/api/events.functions";
+import { fetchCenters } from "@/lib/api/organizations.functions";
+import { fetchAnalyticsSummary, type AnalyticsSummaryDto } from "@/lib/api/analytics.functions";
+import { fetchSchedulePeriods, type SchedulePeriodDto } from "@/lib/api/schedules.functions";
+import { fetchAttendance } from "@/lib/api/attendance.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -62,13 +51,6 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-const kpis = [
-  { label: "Спортсменов в системе", value: "1 284", delta: "+4.2%", icon: Users, tone: "primary" as const },
-  { label: "Медалей за сезон", value: "342", delta: "+18%", icon: Medal, tone: "accent" as const },
-  { label: "Активных соревнований", value: "27", delta: "+3", icon: Trophy, tone: "secondary" as const },
-  { label: "Средний рейтинг", value: "1 728", delta: "+62", icon: TrendingUp, tone: "success" as const },
-];
-
 const toneStyles: Record<string, string> = {
   primary: "bg-primary/10 text-primary",
   accent: "bg-accent/15 text-accent-foreground",
@@ -76,18 +58,31 @@ const toneStyles: Record<string, string> = {
   success: "bg-[color:var(--success)]/15 text-[color:var(--success)]",
 };
 
+const money = new Intl.NumberFormat("ru-RU", {
+  style: "currency",
+  currency: "RUB",
+  maximumFractionDigits: 0,
+});
+
+function startOfToday(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 function Dashboard() {
   const { loading } = useAuthGuard();
   const { isDirector, isCoach, isAdmin, user } = useAuth();
-  const { selectedCenterId } = useCenter();
 
   const coachName = user?.coachName;
 
   const [myPlan, setMyPlan] = useState<Plan | null>(null);
   const [allPlans, setAllPlans] = useState<Plan[]>([]);
   const [plansError, setPlansError] = useState("");
-  const [criteria, setCriteria] = useState<IncentiveCriteriaPayload | null>(null);
+  const [criteria, setCriteria] = useState<IncentiveCriteria | null>(null);
   const [criteriaError, setCriteriaError] = useState("");
+  const [payoutRange, setPayoutRange] = useState<{ min: number; max: number } | null>(null);
+  const [coachTier, setCoachTier] = useState<CoachTier | null>(null);
 
   useEffect(() => {
     if (loading) return;
@@ -96,8 +91,19 @@ function Dashboard() {
       try {
         const list = await fetchCriteria();
         if (cancelled) return;
-        setCriteria(list[0] ?? null);
+        const rec = list[0] ?? null;
+        setCriteria(rec);
+        setCoachTier(rec?.assigned_tier ?? null);
         setCriteriaError("");
+        try {
+          const programs = await apiFetch<{ status: string; min_payout: number; max_payout: number }[]>("/incentive/programs");
+          const active = programs.find((p) => p.status === "active");
+          if (!cancelled && active) {
+            setPayoutRange({ min: active.min_payout, max: active.max_payout });
+          }
+        } catch {
+          /* суммы — необязательный блок */
+        }
       } catch {
         if (!cancelled) setCriteriaError("Не удалось загрузить критерии.");
       }
@@ -127,42 +133,209 @@ function Dashboard() {
     };
   }, [loading, user?.id]);
 
-  const topAthletes = [...athletes].sort((a, b) => b.rating - a.rating).slice(0, 5);
+  // --- API data ---
+  const [athletesData, setAthletesData] = useState<any[]>([]);
+  const [competitionsData, setCompetitionsData] = useState<any[]>([]);
+  const [centersData, setCentersData] = useState<any[]>([]);
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsSummaryDto | null>(null);
+
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchAthletes();
+        if (cancelled) return;
+        setAthletesData(list.items);
+      } catch {
+        setAthletesData([]);
+      }
+    })();
+    return () => { cancelled = true };
+  }, [loading]);
+
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchCompetitions();
+        if (cancelled) return;
+        setCompetitionsData(list);
+      } catch {
+        setCompetitionsData([]);
+      }
+    })();
+    return () => { cancelled = true };
+  }, [loading]);
+
+  useEffect(() => {
+    if (loading || !isDirector) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchCenters();
+        if (cancelled) return;
+        setCentersData(list);
+      } catch {
+        setCentersData([]);
+      }
+    })();
+    return () => { cancelled = true };
+  }, [loading, isDirector]);
+
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const summary = await fetchAnalyticsSummary();
+        if (cancelled) return;
+        setAnalyticsData(summary);
+      } catch {
+        setAnalyticsData(null);
+      }
+    })();
+    return () => { cancelled = true };
+  }, [loading]);
+
+  const [disciplineMix, setDisciplineMix] = useState<any[]>([]);
+  const [monthlyResults, setMonthlyResults] = useState<any[]>([]);
+
+  // --- computed from API + mock ---
+  useEffect(() => {
+    if (analyticsData) {
+      // disciplineMix: athletes_by_discipline → {name, value}
+      const disciplineMix = analyticsData.athletes_by_discipline.map(
+        (d: { name: string; value: number }) => ({
+          name: d.name,
+          value: d.value,
+        }),
+      );
+      // monthlyResults: medal_dynamics → {month, gold, silver, bronze}
+      const monthlyResults = analyticsData.medal_dynamics.map(
+        (m: { month: string; gold: number; silver: number; bronze: number }) => ({
+          month: m.month,
+          gold: m.gold,
+          silver: m.silver,
+          bronze: m.bronze,
+        }),
+      );
+      setDisciplineMix(disciplineMix);
+      setMonthlyResults(monthlyResults);
+    }
+  }, [analyticsData]);
+
+  const topAthletes = analyticsData?.top_athletes ?? [];
+
+  const summaryKpis = useMemo(() => {
+    if (!analyticsData) return null;
+    const medals = analyticsData.kpis.medals;
+    const avgPoints = analyticsData.top_athletes.length
+      ? Math.round(
+          analyticsData.top_athletes.reduce((s, a) => s + a.points, 0) /
+            analyticsData.top_athletes.length,
+        )
+      : 0;
+    return [
+      { label: "Спортсменов в системе", value: analyticsData.kpis.athletes, icon: Users, tone: "primary" as const },
+      { label: "Медалей за сезон", value: medals.gold + medals.silver + medals.bronze, icon: Medal, tone: "accent" as const },
+      { label: "Активных соревнований", value: analyticsData.kpis.competitions, icon: Trophy, tone: "secondary" as const },
+      { label: "Средний рейтинг", value: avgPoints, icon: TrendingUp, tone: "success" as const },
+    ];
+  }, [analyticsData]);
 
   /* Coach-specific data */
+  const [activePeriods, setActivePeriods] = useState<SchedulePeriodDto[]>([]);
+  const [attendancePct, setAttendancePct] = useState(0);
+
+  useEffect(() => {
+    if (loading || !isCoach || !user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchSchedulePeriods({ coach_user_id: user.id, status: "active" });
+        if (!cancelled) setActivePeriods(list);
+      } catch {
+        if (!cancelled) setActivePeriods([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loading, isCoach, user?.id]);
+
+  useEffect(() => {
+    if (loading || !isCoach || !user?.id) return;
+    let cancelled = false;
+    const iso = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    (async () => {
+      try {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 6);
+        const records = await fetchAttendance({
+          coachUserId: user.id,
+          dateFrom: iso(start),
+          dateTo: iso(end),
+          perPage: 500,
+        });
+        if (!cancelled) {
+          const total = records.items.length;
+          const present = records.items.filter((r) => r.status === "present").length;
+          setAttendancePct(total === 0 ? 0 : Math.round((present / total) * 100));
+        }
+      } catch {
+        if (!cancelled) setAttendancePct(0);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loading, isCoach, user?.id]);
+
   const myAthletes = useMemo(
-    () => (coachName ? athletes.filter((a) => a.coach === coachName).sort((a, b) => b.rating - a.rating) : []),
-    [coachName],
+    () => (coachName ? athletesData.filter((a) => a.coach_user_id ? a.coach_user_id === coachName : a.coach_id === coachName).sort((a, b) => b.rating - a.rating) : []),
+    [coachName, athletesData],
   );
-  const mySchedulesToday = useMemo(() => {
-    if (!coachName) return [];
-    const today = new Date().getDay();
-    const dayMap: Record<number, number> = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 1, 0: 5 };
-    const dow = dayMap[today] ?? 0;
-    const activePeriodIds = new Set(
-      schedulePeriods
-        .filter((p) => getPeriodStatus(p) === "active" && p.coachName === coachName)
-        .map((p) => p.id),
-    );
-    return schedules.filter(
-      (s) => s.coachName === coachName && s.dayOfWeek === dow && activePeriodIds.has(s.periodId),
-    );
-  }, [coachName]);
-  const myAttendance = useMemo(() => {
-    const ids = new Set(myAthletes.map((a) => a.id));
-    return attendanceRecords.filter((r) => ids.has(r.athleteId));
-  }, [myAthletes]);
-  const attendancePct = useMemo(() => {
-    if (myAttendance.length === 0) return 0;
-    const present = myAttendance.filter((r) => r.status === "present").length;
-    return Math.round((present / myAttendance.length) * 100);
-  }, [myAttendance]);
+  const myTodayLessons = useMemo(() => {
+    if (!isCoach) return [];
+    const jsDay = new Date().getDay();
+    const dow = jsDay === 0 ? 7 : jsDay;
+    const today = new Date();
+    const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const lessons: {
+      id: string;
+      groupName: string;
+      startTime: string;
+      endTime: string;
+      room: string | null;
+      discipline: string | null;
+    }[] = [];
+    for (const p of activePeriods) {
+      if (!p.period_start || !p.period_end) continue;
+      if (todayISO < p.period_start || todayISO > p.period_end) continue;
+      for (const item of p.items ?? []) {
+        if (item.day_of_week !== dow) continue;
+        lessons.push({
+          id: `${p.id}-${item.id}`,
+          groupName: p.group_name ?? "—",
+          startTime: item.start_time,
+          endTime: item.end_time,
+          room: item.room,
+          discipline: p.discipline,
+        });
+      }
+    }
+    lessons.sort((a, b) => a.startTime.localeCompare(b.startTime));
+    return lessons;
+  }, [isCoach, activePeriods]);
   const totalMedals = useMemo(() => {
-    return myAthletes.reduce((s, a) => s + a.medals.gold + a.medals.silver + a.medals.bronze, 0);
+    return myAthletes.reduce(
+      (s, a) => s + (a.medals?.gold ?? 0) + (a.medals?.silver ?? 0) + (a.medals?.bronze ?? 0),
+      0,
+    );
   }, [myAthletes]);
 
   const myCompetitions = useMemo(
-    () => (user?.id ? competitions.filter((c) => c.coachId === user.id) : []),
+    () => (user?.id ? competitionsData.filter((c) => c.coach_id === user.id) : []),
     [user?.id],
   );
 
@@ -170,28 +343,13 @@ function Dashboard() {
   const todayLabel = dayLabels[new Date().getDay() === 0 ? 5 : new Date().getDay() === 6 ? 1 : new Date().getDay()] ?? "Пн";
 
   const centerStats = useMemo(() => {
-    return centers.map((c) => {
-      const centerCities = athletes
-        .filter((a) => getCenterIdByCity(a.city) === c.id)
-        .map((a) => a.city);
-      const uniqueCities = [...new Set(centerCities)];
-      const centerAthletes = athletes.filter((a) => getCenterIdByCity(a.city) === c.id);
-      const centerCoachesVal = c.coaches;
-      const gold = centerAthletes.reduce((s, a) => s + a.medals.gold, 0);
-      const silver = centerAthletes.reduce((s, a) => s + a.medals.silver, 0);
-      const bronze = centerAthletes.reduce((s, a) => s + a.medals.bronze, 0);
-      return { ...c, cities: uniqueCities, actualGold: gold, actualSilver: silver, actualBronze: bronze };
+    return centersData.map((c) => {
+      const centerAthletes = athletesData.filter((a) => a.center_id === c.id);
+      const uniqueCities = [...new Set(centerAthletes.map((a) => a.center_city).filter(Boolean))];
+      const coachesCount = new Set(centerAthletes.map((a) => a.coach_id).filter(Boolean)).size;
+      return { ...c, cities: uniqueCities, athletesCount: centerAthletes.length, coachesCount };
     });
-  }, []);
-
-  const filteredActivity = useMemo(() => {
-    if (!selectedCenterId) return recentActivity;
-    const centerCities = athletes
-      .filter((a) => getCenterIdByCity(a.city) === selectedCenterId)
-      .map((a) => a.city);
-    const uniqueCities = [...new Set(centerCities)];
-    return recentActivity;
-  }, [selectedCenterId]);
+  }, [centersData, athletesData]);
 
   const myPlanSummary = useMemo(() => {
     if (!myPlan || myPlan.items.length === 0) return null;
@@ -263,35 +421,34 @@ function Dashboard() {
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             {centerStats.map((c) => (
-              <Card key={c.id} className="overflow-hidden border-l-4 shadow-[var(--shadow-card)]"
-                style={{ borderLeftColor: c.id === "center-1" ? "var(--color-primary)" : c.id === "center-2" ? "var(--color-accent)" : "var(--color-secondary)" }}>
+              <Card key={c.id} className="overflow-hidden border-l-4 border-l-secondary shadow-[var(--shadow-card)]">
                 <div className="p-5">
                   <div className="flex items-center justify-between">
                     <h3 className="font-display text-base font-bold text-secondary">{c.name}</h3>
-                    <span className="text-xs text-muted-foreground">{c.cities.join(", ")}</span>
+                    <span className="text-xs text-muted-foreground">{c.cities.join(", ") || c.city}</span>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{c.address}</p>
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     <div className="rounded-lg bg-muted/30 p-2.5 text-center">
-                      <div className="text-lg font-bold text-secondary">{c.athletes}</div>
+                      <div className="text-lg font-bold text-secondary">{c.athletesCount}</div>
                       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Спортсменов</div>
                     </div>
                     <div className="rounded-lg bg-muted/30 p-2.5 text-center">
-                      <div className="text-lg font-bold text-secondary">{c.coaches}</div>
+                      <div className="text-lg font-bold text-secondary">{c.coachesCount}</div>
                       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Тренеров</div>
                     </div>
                     <div className="rounded-lg bg-muted/30 p-2.5 text-center">
-                      <div className="text-lg font-bold text-secondary">{c.groups}</div>
-                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Групп</div>
+                      <div className="truncate text-lg font-bold text-secondary">{c.center_type || "—"}</div>
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Тип центра</div>
                     </div>
                     <div className="rounded-lg bg-muted/30 p-2.5 text-center">
-                      <div className="text-lg font-bold text-accent">{c.avgEfficiency}%</div>
-                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Эффективность</div>
+                      <div className="text-lg font-bold text-accent">{c.is_active ? "Активен" : "Неактивен"}</div>
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Статус</div>
                     </div>
                   </div>
                   <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
-                    <span>Медалей: <strong className="text-secondary">{c.actualGold}G / {c.actualSilver}S / {c.actualBronze}B</strong></span>
-                    <span>{c.phone}</span>
+                    <span>{c.email || "Нет e-mail"}</span>
+                    <span>{c.phone || "—"}</span>
                   </div>
                 </div>
               </Card>
@@ -313,24 +470,21 @@ function Dashboard() {
           </div>
         </section>
       ) : (
-      <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-[image:var(--gradient-hero)] text-primary-foreground shadow-[var(--shadow-glow)]">
+<section className="mb-6 overflow-hidden rounded-2xl border border-border bg-[image:var(--gradient-hero)] text-primary-foreground shadow-[var(--shadow-glow)]">
         <div className="flex flex-col gap-6 p-6 md:flex-row md:items-center md:justify-between md:p-8">
           <div className="max-w-xl">
             <Badge className="mb-3 border-0 bg-accent text-accent-foreground hover:bg-accent">Сезон 2025/26</Badge>
             <h2 className="font-display text-2xl font-bold leading-tight md:text-3xl">
-              Сборная держит ритм. <span className="text-accent">+18%</span> медалей к плану.
+              В системе {summaryKpis ? summaryKpis[0].value.toLocaleString("ru-RU") : "—"}{" "}
+              спортсменов, {summaryKpis ? summaryKpis[1].value.toLocaleString("ru-RU") : "—"} медалей за сезон.
             </h2>
             <p className="mt-2 text-sm text-primary-foreground/80">
-              За последние 30 дней проведено 7 сборов и 4 соревнования. Готовность к Кубку России — 92%.
+              Активных соревнований: {summaryKpis ? summaryKpis[2].value.toLocaleString("ru-RU") : "—"}.
             </p>
           </div>
           <div className="flex gap-3">
-            <Button className="bg-accent text-accent-foreground hover:bg-accent/90">
-              Открыть отчёт <ArrowUpRight className="ml-1 h-4 w-4" />
-            </Button>
-            <Button variant="outline" className="border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20 hover:text-primary-foreground">
-              Календарь
-            </Button>
+            <Button onClick={() => { window.location.href = "/reports"; }}>Открыть отчёт <ArrowUpRight className="ml-1 h-4 w-4" /></Button>
+            <Button variant="ghost" className="text-primary-foreground/80 hover:text-primary-foreground" onClick={() => { window.location.href = "/schedules"; }}>Календарь</Button>
           </div>
         </div>
       </section>
@@ -354,7 +508,7 @@ function Dashboard() {
                 <Dumbbell className="h-5 w-5" />
               </div>
             </div>
-            <div className="mt-4 font-display text-2xl font-bold text-secondary">{mySchedulesToday.length}</div>
+            <div className="mt-4 font-display text-2xl font-bold text-secondary">{myTodayLessons.length}</div>
             <div className="mt-1 text-xs text-muted-foreground">Занятий сегодня</div>
           </Card>
           <Card className="p-5 shadow-[var(--shadow-card)]">
@@ -384,18 +538,21 @@ function Dashboard() {
       ) : (
       /* KPIs */
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((k) => (
+        {summaryKpis ? summaryKpis.map((k) => (
           <Card key={k.label} className="p-5 shadow-[var(--shadow-card)]">
             <div className="flex items-start justify-between">
               <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${toneStyles[k.tone]}`}>
                 <k.icon className="h-5 w-5" />
               </div>
-              <span className="rounded-full bg-[color:var(--success)]/10 px-2 py-0.5 text-xs font-medium text-[color:var(--success)]">
-                {k.delta}
-              </span>
             </div>
-            <div className="mt-4 font-display text-2xl font-bold text-secondary">{k.value}</div>
+            <div className="mt-4 font-display text-2xl font-bold text-secondary">{k.value.toLocaleString("ru-RU")}</div>
             <div className="mt-1 text-xs text-muted-foreground">{k.label}</div>
+          </Card>
+        )) : [0, 1, 2, 3].map((i) => (
+          <Card key={i} className="p-5 shadow-[var(--shadow-card)]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted" />
+            <div className="mt-4 font-display text-2xl font-bold text-secondary">—</div>
+            <div className="mt-1 text-xs text-muted-foreground">Загрузка…</div>
           </Card>
         ))}
       </section>
@@ -404,7 +561,20 @@ function Dashboard() {
       {/* Incentive Program Criteria Summary (v8) — Coach only */}
       {isCoach && (
         <section className="mb-6">
-          <h3 className="mb-3 font-display text-sm font-bold text-secondary">Критерии материального стимулирования</h3>
+          <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
+            <h3 className="font-display text-sm font-bold text-secondary">Критерии материального стимулирования</h3>
+            {coachTier && payoutRange && (
+              <Badge variant="outline" className={
+                coachTier === "full"
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : "bg-sky-50 text-sky-700 border-sky-200"
+              }>
+                {coachTier === "full"
+                  ? `Полная выплата ${money.format(payoutRange.max)}`
+                  : `Базовая выплата ${money.format(payoutRange.min)}`}
+              </Badge>
+            )}
+          </div>
           <Card className="border border-border p-4 shadow-none">
             {!criteria ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
@@ -412,42 +582,52 @@ function Dashboard() {
                   ? criteriaError
                   : "Критерии ещё не утверждены руководителем центра. Нормы появятся здесь после утверждения."}
               </div>
+            ) : !coachTier ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Выплата по отчёту не назначена: руководитель центра ещё не выбрал базовый или полный тир для вашего
+                профиля. Обратитесь к руководителю центра.
+              </div>
             ) : (
               <>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 {[
-                  { label: "Спортсмены (до 21 года)", current: criteriaMetrics?.athletes ?? 0, full: criteria.athletes_full, basic: criteria.athletes_basic, unit: "чел." },
-                  { label: "Часы тренировок", current: 0, full: criteria.hours_full, basic: criteria.hours_basic, unit: "ч/нед", note: "по расписанию" },
-                  { label: "Мероприятия с особыми категориями", current: criteriaMetrics?.socialEvents ?? 0, full: criteria.social_events_full, basic: criteria.social_events_basic, unit: "меропр./мес" },
-                  { label: "Спортивные мероприятия", current: criteriaMetrics?.sportEvents ?? 0, full: criteria.sports_events_full, basic: criteria.sports_events_basic, unit: "меропр./мес" },
-                  { label: "Мероприятия развития спортсменов", current: criteriaMetrics?.developmentEvents ?? 0, full: criteria.development_events_full, basic: criteria.development_events_basic, unit: "меропр./мес" },
+                  { label: "Спортсмены (до 21 года)", current: criteriaMetrics?.athletes ?? 0, norm: coachTier === "full" ? criteria.athletes_full : criteria.athletes_basic, unit: "чел." },
+                  { label: "Часы тренировок", current: 0, norm: coachTier === "full" ? criteria.hours_full : criteria.hours_basic, unit: "ч/нед", note: "по расписанию" },
+                  { label: "Мероприятия с особыми категориями", current: criteriaMetrics?.socialEvents ?? 0, norm: coachTier === "full" ? criteria.social_events_full : criteria.social_events_basic, unit: "меропр./мес" },
+                  { label: "Спортивные мероприятия", current: criteriaMetrics?.sportEvents ?? 0, norm: coachTier === "full" ? criteria.sports_events_full : criteria.sports_events_basic, unit: "меропр./мес" },
+                  { label: "Мероприятия развития спортсменов", current: criteriaMetrics?.developmentEvents ?? 0, norm: coachTier === "full" ? criteria.development_events_full : criteria.development_events_basic, unit: "меропр./мес" },
                 ].map((c) => {
-                  const pct = c.full > 0 ? Math.min((c.current / c.full) * 100, 100) : 0;
-                  const meetsFull = c.full > 0 && c.current >= c.full;
-                  const meetsBasic = c.basic > 0 && c.current >= c.basic;
+                  const pct = c.norm > 0 ? Math.min((c.current / c.norm) * 100, 100) : 0;
+                  const meets = c.norm > 0 && c.current >= c.norm;
                   return (
                     <div key={c.label} className="space-y-1.5">
                       <div className="text-xs font-medium text-secondary">{c.label}</div>
                       <div className="flex items-baseline gap-1.5">
                         <span className="font-display text-lg font-bold text-secondary">{c.current}</span>
-                        <span className="text-xs text-muted-foreground">/ {c.full} {c.unit}</span>
+                        <span className="text-xs text-muted-foreground">/ {c.norm} {c.unit}</span>
                       </div>
                       {c.note && <div className="text-[10px] text-muted-foreground">{c.note}</div>}
                       <div className="h-1.5 w-full rounded-full bg-muted/40">
                         <div
-                          className={`h-full rounded-full transition-all ${meetsFull ? "bg-emerald-500" : meetsBasic ? "bg-amber-500" : "bg-red-400"}`}
+                          className={`h-full rounded-full transition-all ${meets ? "bg-emerald-500" : "bg-red-400"}`}
                           style={{ width: `${pct}%` }}
                         />
                       </div>
                       <div className="text-[10px] text-muted-foreground">
-                        {meetsFull ? "≥50К ✓" : meetsBasic ? "≥25К" : "ниже нормы"}
+                        {meets
+                          ? coachTier === "full"
+                            ? `≥${money.format(payoutRange?.max ?? 50000)} ✓`
+                            : `≥${money.format(payoutRange?.min ?? 25000)} ✓`
+                          : "ниже нормы"}
                       </div>
                     </div>
                   );
                 })}
               </div>
               <div className="mt-3 border-t border-border pt-2 text-[10px] text-muted-foreground/60">
-                Нормы утверждены руководителем центра. Полная выплата — максимум активной программы, базовая — её минимум (выплаты на усмотрение Организации, п. 1.3). Часы — по расписанию, будет уточнено после подключения данных.
+                Нормы утверждены руководителем центра. Ваш тир — «{coachTier === "full" ? "полный" : "базовый"}»: выплата
+                рассчитывается по нормам {coachTier === "full" ? "полного" : "базового"} уровня активной программы; без
+                назначенного тира отчёт не формирует выплату. Часы — по расписанию, будет уточнено после подключения данных.
               </div>
               </>
             )}
@@ -501,17 +681,17 @@ function Dashboard() {
                   <Clock className="h-4 w-4 text-primary" />
                   <h3 className="font-display text-base font-bold text-secondary">{todayLabel} — занятия</h3>
                 </div>
-                {mySchedulesToday.length === 0 ? (
+                {myTodayLessons.length === 0 ? (
                   <p className="py-6 text-center text-sm text-muted-foreground">Занятий нет</p>
                 ) : (
                 <ul className="space-y-3">
-                  {mySchedulesToday.map((s) => (
+                  {myTodayLessons.map((s) => (
                     <li key={s.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-secondary">{getGroupName(s.groupId)}</div>
-                        <div className="text-xs text-muted-foreground">{s.timeStart}–{s.timeEnd} · {s.room}</div>
+                        <div className="truncate text-sm font-semibold text-secondary">{s.groupName}</div>
+                        <div className="text-xs text-muted-foreground">{s.startTime}–{s.endTime} · {s.room ?? "—"}</div>
                       </div>
-                      <div className="shrink-0 text-xs text-muted-foreground">{s.discipline}</div>
+                      <div className="shrink-0 text-xs text-muted-foreground">{s.discipline ?? "—"}</div>
                     </li>
                   ))}
                 </ul>
@@ -560,15 +740,18 @@ function Dashboard() {
                 <Trophy className="h-4 w-4 text-primary" />
                 <h3 className="font-display text-base font-bold text-secondary">Мои соревнования</h3>
               </div>
-              {myCompetitions.filter((c) => c.status === "upcoming").length === 0 ? (
+              {myCompetitions.filter((c) => c.status !== "cancelled" && new Date(`${c.end_date}T00:00:00`).getTime() >= startOfToday()).length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">Нет предстоящих соревнований</p>
               ) : (
                 <ul className="space-y-3">
-                  {myCompetitions.filter((c) => c.status === "upcoming").slice(0, 5).map((ev) => (
+                  {myCompetitions.filter((c) => {
+                    const end = new Date(`${c.end_date}T00:00:00`);
+                    return c.status !== "cancelled" && end.getTime() >= startOfToday();
+                  }).slice(0, 5).map((ev) => (
                     <li key={ev.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-secondary">{ev.title}</div>
-                        <div className="text-xs text-muted-foreground">{ev.city} · {ev.date}</div>
+                        <div className="truncate text-sm font-semibold text-secondary">{ev.name}</div>
+                        <div className="text-xs text-muted-foreground">{ev.city} · {new Date(ev.start_date).toLocaleDateString("ru-RU")}</div>
                       </div>
                       <div className="shrink-0 rounded-md bg-accent/15 px-2.5 py-1 text-xs font-bold text-secondary">
                         {ev.level}
@@ -579,31 +762,6 @@ function Dashboard() {
               )}
             </Card>
           </div>
-
-          {/* Recent activity (coach-filtered) */}
-          <section className="mt-6">
-            <Card className="p-5 shadow-[var(--shadow-card)]">
-              <div className="mb-3 flex items-center gap-2">
-                <Activity className="h-4 w-4 text-primary" />
-                <h3 className="font-display text-base font-bold text-secondary">Последние события</h3>
-              </div>
-              <ul className="space-y-3">
-                {recentActivity.map((e) => (
-                  <li key={e.id} className="flex gap-3 text-sm">
-                    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                      e.tone === "gold" ? "bg-accent" : e.tone === "warn" ? "bg-destructive" : "bg-primary"
-                    }`} />
-                    <div className="min-w-0">
-                      <span className="font-medium text-secondary">{e.who}</span>{' '}
-                      <span className="text-muted-foreground">{e.action}</span>{' '}
-                      <span className="font-medium text-foreground">{e.target}</span>
-                      <div className="text-xs text-muted-foreground">{e.time}</div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          </section>
         </>
       ) : (
       <>
@@ -735,70 +893,53 @@ function Dashboard() {
       <section className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card className="p-5 shadow-[var(--shadow-card)] lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="font-display text-base font-bold text-secondary">Топ-5 спортсменов по рейтингу</h3>
-            <Button variant="ghost" size="sm" className="text-primary">Все <ArrowUpRight className="ml-1 h-3 w-3" /></Button>
+            <h3 className="font-display text-base font-bold text-secondary">Топ-5 спортсменов по очкам</h3>
+            <Button variant="ghost" size="sm" className="text-primary" onClick={() => { window.location.href = "/athletes"; }}>Все <ArrowUpRight className="ml-1 h-3 w-3" /></Button>
           </div>
+          {topAthletes.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Нет данных по спортсменам</p>
+          ) : (
           <ul className="divide-y divide-border">
             {topAthletes.map((a, i) => (
-              <li key={a.id} className="flex items-center gap-4 py-3">
+              <li key={`${a.name}-${i}`} className="flex items-center gap-4 py-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary font-display text-sm font-bold text-primary-foreground">
                   {i + 1}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium text-secondary">{a.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {a.discipline} · {a.rank} · {a.city}
+                    {[a.discipline, a.rank].filter(Boolean).join(" · ")}
                   </div>
                 </div>
-                <div className="hidden text-xs text-muted-foreground sm:block">{a.coach}</div>
-                <div className="font-display text-base font-bold text-primary">{a.rating}</div>
+                <div className="hidden text-xs text-muted-foreground sm:block">{a.medals.gold}G · {a.medals.silver}S · {a.medals.bronze}B</div>
+                <div className="font-display text-base font-bold text-primary">{a.points}</div>
               </li>
             ))}
           </ul>
+          )}
         </Card>
 
         <div className="flex flex-col gap-4">
-          <Card className="p-5 shadow-[var(--shadow-card)]">
-            <div className="mb-3 flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" />
-              <h3 className="font-display text-base font-bold text-secondary">События</h3>
-            </div>
-            <ul className="space-y-3">
-              {recentActivity.map((e) => (
-                <li key={e.id} className="flex gap-3 text-sm">
-                  <span
-                    className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                      e.tone === "gold" ? "bg-accent" : e.tone === "warn" ? "bg-destructive" : "bg-primary"
-                    }`}
-                  />
-                  <div className="min-w-0">
-                    <span className="font-medium text-secondary">{e.who}</span>{" "}
-                    <span className="text-muted-foreground">{e.action}</span>{" "}
-                    <span className="font-medium text-foreground">{e.target}</span>
-                    <div className="text-xs text-muted-foreground">{e.time}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
-
           <Card className="p-5 shadow-[var(--shadow-card)]">
             <div className="mb-3 flex items-center gap-2">
               <CalendarDays className="h-4 w-4 text-primary" />
               <h3 className="font-display text-base font-bold text-secondary">Ближайшие старты</h3>
             </div>
             <ul className="space-y-3">
-              {competitions.filter((c) => c.status === "upcoming").slice(0, 3).map((ev) => (
+              {competitionsData.filter((c) => c.status !== "cancelled" && new Date(`${c.end_date}T00:00:00`).getTime() >= startOfToday()).slice(0, 3).map((ev) => (
                 <li key={ev.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-secondary">{ev.title}</div>
-                    <div className="text-xs text-muted-foreground">{ev.city} · {ev.athletes.length} от ЦСЕ</div>
+                    <div className="truncate text-sm font-semibold text-secondary">{ev.name}</div>
+                    <div className="text-xs text-muted-foreground">{ev.city} · {new Date(ev.start_date).toLocaleDateString("ru-RU")}</div>
                   </div>
                   <div className="shrink-0 rounded-md bg-accent/15 px-2.5 py-1 text-xs font-bold text-secondary">
-                    {ev.date}
+                    {ev.competitions.reduce((s: number, x: any) => s + (x.participants?.length ?? 0), 0)} участ.
                   </div>
                 </li>
               ))}
+              {competitionsData.filter((c) => c.status !== "cancelled" && new Date(`${c.end_date}T00:00:00`).getTime() >= startOfToday()).length === 0 && (
+                <li className="py-4 text-center text-sm text-muted-foreground">Нет предстоящих стартов</li>
+              )}
             </ul>
           </Card>
         </div>

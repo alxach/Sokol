@@ -1,5 +1,7 @@
 import { apiFetch } from "@/lib/api/client";
 
+export type CoachTier = "full" | "basic";
+
 export interface IncentiveCriteria {
   id: string;
   center_id: string;
@@ -14,6 +16,16 @@ export interface IncentiveCriteria {
   sports_events_basic: number;
   development_events_full: number;
   development_events_basic: number;
+  assigned_tier: CoachTier | null;
+}
+
+export interface CoachTierRecord {
+  coach_id: string;
+  user_id: string;
+  coach_name: string;
+  specialization: string;
+  tier: CoachTier | null;
+  updated_at: string | null;
 }
 
 export interface IncentiveCriteriaPayload {
@@ -54,5 +66,20 @@ export async function saveCriteria(
   return apiFetch<IncentiveCriteria>(`/incentive/criteria/${centerId}`, {
     method: "PUT",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchCoachTiers(centerId?: string | null): Promise<CoachTierRecord[]> {
+  const qs = centerId ? `?center_id=${encodeURIComponent(centerId)}` : "";
+  return apiFetch<CoachTierRecord[]>(`/incentive/coach-tiers${qs}`);
+}
+
+export async function setCoachTier(
+  coachId: string,
+  tier: CoachTier,
+): Promise<CoachTierRecord> {
+  return apiFetch<CoachTierRecord>(`/incentive/coach-tiers/${coachId}`, {
+    method: "PUT",
+    body: JSON.stringify({ tier }),
   });
 }

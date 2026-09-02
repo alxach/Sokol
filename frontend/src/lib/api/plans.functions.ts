@@ -1,5 +1,45 @@
 import { apiFetch } from "@/lib/api/client";
-import type { Plan, PlanCategoryId, PlanItem, PlanStatus } from "@/lib/mock-data";
+import type { PlanCategoryId } from "@/lib/plan-categories";
+
+export type PlanStatus = "draft" | "submitted" | "approved" | "rejected";
+
+export interface PlanItem {
+  id: string;
+  categoryId: PlanCategoryId;
+  quarter: number;
+  date: string;
+  name: string;
+  description: string;
+  location: string;
+  participantsCategory: string;
+  participantsCount: string;
+  month: string;
+  status: PlanStatus;
+  submittedAt?: string;
+  reviewedAt?: string;
+  reviewerComment?: string;
+  reviewerName?: string;
+}
+
+export interface Plan {
+  id: string;
+  coachId: string;
+  coachName: string;
+  coachInitials: string;
+  discipline: string;
+  centerId: string;
+  year: number;
+  periodLabel: string;
+  items: PlanItem[];
+  status: PlanStatus;
+  reviewerComment?: string;
+  reviewerName?: string;
+  createdAt: string;
+  submittedAt?: string;
+  reviewedAt?: string;
+}
+
+export type { PlanCategoryId } from "@/lib/plan-categories";
 
 export const monthOptions = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",

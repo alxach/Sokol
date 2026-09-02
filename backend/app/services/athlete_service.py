@@ -7,6 +7,7 @@ from app.repositories import (
     AthleteMedicalRepository,
     AthleteRankHistoryRepository,
     AthleteRepository,
+    GroupMemberRepository,
 )
 from app.schemas.athlete import (
     AthleteAchievementCreate,
@@ -18,6 +19,11 @@ from app.schemas.athlete import (
     AthleteUpdate,
 )
 
+# Статус, при котором спортсмен выводится из состава всех групп
+# (архивирован) и автоматически исчезает из журнала посещаемости.
+# Данные и история соревнований сохраняются.
+REMOVED_FROM_GROUPS = {"inactive"}
+
 
 class AthleteService:
     def __init__(
@@ -27,12 +33,14 @@ class AthleteService:
         medical_repo: AthleteMedicalRepository,
         achievement_repo: AthleteAchievementRepository,
         ranks_repo: AthleteRankHistoryRepository,
+        member_repo: GroupMemberRepository | None = None,
     ) -> None:
         self.athlete_repo = athlete_repo
         self.doc_repo = doc_repo
         self.medical_repo = medical_repo
         self.achievement_repo = achievement_repo
         self.ranks_repo = ranks_repo
+        self.member_repo = member_repo
 
     async def create(self, data: AthleteCreate) -> AthleteResponse:
         athlete = await self.athlete_repo.create(**data.model_dump())
@@ -59,7 +67,27 @@ class AthleteService:
         instance = await self.athlete_repo.update(athlete_id, **clean)
         if not instance:
             return None
+        new_status = data.status
+        if (
+            self.member_repo is not None
+            and new_status in REMOVED_FROM_GROUPS
+        ):
+            await self.member_repo.remove_all_for_athlete(athlete_id)
         return await self.to_response(instance)
+
+    async def transfer(self, athlete_id: str, new_coach_id: str) -> AthleteResponse | None:
+        instance = await self.athlete_repo.get(athlete_id)
+        if not instance:
+            return None
+        if instance.status != "inactive":
+            raise ValueError("Передавать можно только архивированного спортсмена")
+        coach = await self.athlete_repo.session.execute(
+            select(Coach).where(Coach.id == new_coach_id)
+        )
+        if coach.scalar_one_or_none() is None:
+            raise ValueError("Тренер не найден")
+        updated = await self.athlete_repo.update(athlete_id, coach_id=new_coach_id)
+        return await self.to_response(updated)
 
     async def delete(self, athlete_id: str) -> bool:
         return await self.athlete_repo.delete(athlete_id)

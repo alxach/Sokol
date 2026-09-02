@@ -339,7 +339,9 @@ async def test_superadmin_full_functional_flow(
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "excused"
 
-    resp = await client.get(f"/api/v1/attendance?date={today}", headers=sa)
+    resp = await client.get(
+        f"/api/v1/attendance?date={today}&group_id={group_id}", headers=sa,
+    )
     assert resp.status_code == 200, resp.text
     assert resp.json()["total"] == 2
 

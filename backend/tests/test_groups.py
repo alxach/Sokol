@@ -25,13 +25,19 @@ async def test_group_crud_flow(client, auth):
     created = await client.post(
         "/api/v1/groups",
         headers=headers,
-        json={"name": "Группа А", "sport_type": "Дзюдо", "coach_id": COACH_ID},
+        json={
+            "name": "Группа А",
+            "sport_type": "Дзюдо",
+            "coach_id": COACH_ID,
+            "schedule_note": "понедельник/среда 16:00",
+        },
     )
     assert created.status_code == 200, created.text
     group = created.json()
     group_id = str(group["id"])
     assert group["name"] == "Группа А"
     assert group["sport_type"] == "Дзюдо"
+    assert group["schedule_note"] == "понедельник/среда 16:00"
     assert group["coach_name"] == "Test coach"
     assert group["coach_user_id"] is not None
     assert group["athlete_ids"] == []

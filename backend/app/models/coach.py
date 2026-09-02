@@ -21,6 +21,7 @@ class Coach(TimestampMixin, Base):
     biography: Mapped[str | None] = mapped_column(Text, nullable=True)
     hire_date: Mapped[Date] = mapped_column(Date, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    incentive_tier: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     categories: Mapped[list["CoachCategory"]] = relationship(
         back_populates="coach", cascade="all, delete-orphan",

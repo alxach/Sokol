@@ -79,7 +79,9 @@ class ExcelExportService:
         )
         rows = [
             {
-                "athlete_name": f"{athlete.last_name} {athlete.first_name}" if athlete else "",
+                "athlete_name": " ".join(
+                    p for p in (athlete.last_name, athlete.first_name, athlete.middle_name or "") if p
+                ) if athlete else "",
                 "date": str(att.date) if att.date else "",
                 "status": att.status,
                 "schedule_info": group.name if group else "",

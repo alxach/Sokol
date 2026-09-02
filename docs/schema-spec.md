@@ -318,13 +318,13 @@ class TimestampMixin:
 
 ### 2.9 AthleteStatus (статус спортсмена)
 
+С 2026-09-02 сведён к двум значениям (ADR-025); прежние `graduated`/`transferred`/
+`expelled` удалены из модели, старые данные миграцией приведены к `inactive`.
+
 | Значение | Описание |
 |----------|----------|
-| `active` | Активно тренируется |
-| `inactive` | Не тренируется временно |
-| `graduated` | Выпустился |
-| `transferred` | Переведён в другой центр |
-| `expelled` | Отчислен |
+| `active` | Активен — тренируется, в составе групп, в журнале посещаемости |
+| `inactive` | В архиве — выведен из всех групп, данные и история сохранены |
 
 ### 2.10 EnrollmentType (тип зачисления)
 
@@ -579,6 +579,7 @@ class TimestampMixin:
 | `biography` | TEXT | NULLABLE | | Биография |
 | `hire_date` | DATE | NOT NULL | | Дата найма |
 | `is_active` | BOOLEAN | NOT NULL | `true` | |
+| `incentive_tier` | VARCHAR(10) | NULLABLE | | Тир мат. стимулирования: `full`/`basic`; не назначен = отчёт без выплаты (ADR-023) |
 | `created_at` | TIMESTAMPTZ | NOT NULL | now() | |
 | `updated_at` | TIMESTAMPTZ | NOT NULL | now() | |
 
@@ -1082,6 +1083,40 @@ class TimestampMixin:
 - many → 1 `users` (по `updated_by`)
 
 > Валидация «базовая ≤ полная» выполняется на уровне приложения (`IncentiveCriteriaUpsert.validate_levels` → 422); CHECK-ограничение намеренно не вводится (значения настраиваются через API админом центра).
+>
+> Поле `assigned_tier` в API-ответе (`IncentiveCriteriaOut`) — **виртуальное**: подтягивается из `coaches.incentive_tier` тренера текущего пользователя, в БД не хранится (ADR-023).
+
+---
+
+### 3.44 `trainings` — тренировки с сотрудниками РУСАЛа (ADR-026)
+
+Слоты ознакомительных тренировок с сотрудниками РУСАЛа. Админ/руководитель центра предлагает слоты, тренер записывается (цель; количество участников ставит по факту явки через `/trainings/{id}/attendance`). При подтверждении автоматически создаётся пункт годового плана категории 4 и подставляется в отчёт (п. 4 `sport_events`). Миграция `a2b3c4d5e6f7`.
+
+| Поле | Тип | Ограничения | Default | Описание |
+|------|-----|-------------|---------|----------|
+| `id` | UUID | PK | gen_random_uuid() | |
+| `center_id` | UUID | FK → centers.id, NOT NULL | | Центр |
+| `coach_id` | UUID | FK → coaches.id, NULL | | Выбранный тренер |
+| `date` | DATE | NOT NULL | | Дата тренировки |
+| `start_time` | TIME | NOT NULL | | Время начала |
+| `location` | VARCHAR(500) | NOT NULL | | Место проведения |
+| `participants_count` | INTEGER | NULL | | Фактическая явка (тренер/админ, по факту), 1–30; NULL до проставления через `/trainings/{id}/attendance` |
+| `goal` | TEXT | NULL | | Цель тренировки (тренер) |
+| `status` | VARCHAR(20) | NOT NULL | `proposed` | `proposed` / `confirmed` / `cancelled` |
+| `created_by` | UUID | FK → users.id, NOT NULL | | Кто создал слот |
+| `plan_item_id` | UUID | FK → plan_items.id ON DELETE SET NULL, NULL | | Связанный пункт плана (кат. 4) |
+| `created_at` | TIMESTAMPTZ | NOT NULL | now() | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | now() | |
+
+**Связи:**
+- many → 1 `centers`
+- many → 1 `coaches` (по `coach_id`)
+- many → 1 `users` (по `created_by`)
+- many → 1 `plan_items` (по `plan_item_id`)
+
+> Фиксированное название `TRAINING_NAME = "Тренировка с сотрудниками РУСАЛа"` и категория `PLAN_CATEGORY = "4"`.
+>
+> Ограничение «один слот в день на тренера» реализовано на уровне сервиса (`TrainingService` → 422).
 
 ---
 

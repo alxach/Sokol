@@ -3,7 +3,8 @@ from datetime import UTC, datetime
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from app.models import Center, Coach, User
+from app.core.dependencies import CurrentUser
+from app.models import Center, Coach, IncentiveProgram, User
 from app.repositories import (
     ReportRepository,
     ReportSubmissionRepository,
@@ -19,7 +20,7 @@ from app.schemas.report import (
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "draft": {"submitted"},
     "submitted": {"approved", "rejected"},
-    "rejected": {"submitted"},
+    "rejected": {"submitted", "draft"},
     "approved": set(),
 }
 
@@ -37,6 +38,52 @@ class ReportService:
     @property
     def session(self):
         return self.report_repo.session
+
+    # ── Access scope ───────────────────────────────────────────────────────
+    async def accessible_center(self, user) -> str | None:
+        """Центр, к которому привязан пользователь.
+
+        coach → центр его тренерской записи; admin → центр пользователя;
+        director/superadmin → None (доступ ко всем отчётам).
+        """
+        if user.has_any_role("director", "superadmin"):
+            return None
+        if "admin" in user.roles:
+            user_row = await self._user_row(user.id)
+            return str(user_row.center_id) if user_row and user_row.center_id else None
+        if "coach" in user.roles:
+            coach = await self._coach_of(user.id)
+            return str(coach.center_id) if coach and coach.center_id else None
+        return None
+
+    async def ensure_can_access(self, report, user) -> None:
+        """Проверяет доступ к отчёту: coach — только свои, admin — только своего центра."""
+        if user.has_any_role("director", "superadmin"):
+            return
+        if "admin" in user.roles:
+            user_row = await self._user_row(user.id)
+            if (
+                not user_row
+                or not user_row.center_id
+                or str(report.center_id) != str(user_row.center_id)
+            ):
+                raise HTTPException(status_code=403, detail="Report belongs to another center")
+            return
+        if "coach" in user.roles:
+            if str(report.author_id) != user.id:
+                raise HTTPException(status_code=403, detail="Coach can access only own reports")
+            return
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    async def _coach_of(self, user_id: str) -> Coach | None:
+        return (
+            await self.session.execute(select(Coach).where(Coach.user_id == user_id))
+        ).scalar_one_or_none()
+
+    async def _user_row(self, user_id: str) -> User | None:
+        return (
+            await self.session.execute(select(User).where(User.id == user_id))
+        ).scalar_one_or_none()
 
     # ── Templates ──────────────────────────────────────────────────────────
     async def create_template(self, data: ReportTemplateCreate):
@@ -83,8 +130,7 @@ class ReportService:
         self, report_id: str, data: ReportUpdate, user,
     ) -> ReportResponse:
         report = await self.get(report_id)
-        if "coach" in user.roles and str(report.author_id) != user.id:
-            raise HTTPException(status_code=403, detail="Coach can edit only own reports")
+        await self.ensure_can_access(report, user)
         if report.status != "draft":
             raise HTTPException(status_code=422, detail="Only draft reports can be edited")
         fields = {
@@ -98,8 +144,7 @@ class ReportService:
 
     async def delete(self, report_id: str, user) -> dict:
         report = await self.get(report_id)
-        if "coach" in user.roles and str(report.author_id) != user.id:
-            raise HTTPException(status_code=403, detail="Coach can delete only own reports")
+        await self.ensure_can_access(report, user)
         if report.status != "draft":
             raise HTTPException(status_code=422, detail="Only draft reports can be deleted")
         await self.report_repo.delete(report_id)
@@ -114,20 +159,28 @@ class ReportService:
                 status_code=422,
                 detail=f"Invalid transition {report.status} -> {target}",
             )
-        extra: dict = {}
-        if target == "submitted":
-            extra["payout_tier"] = await self._compute_payout(
-                str(report.template_id), report.data_json,
+        if target == "draft":
+            report.status = "draft"
+            report.reviewer_id = None
+            report.review_comment = None
+            report.reviewed_at = None
+            report.payout_tier = None
+            await self.session.flush()
+            await self.session.refresh(report)
+            updated = report
+        else:
+            extra: dict = {}
+            if target == "submitted":
+                extra["payout_tier"] = await self._compute_payout(report)
+            updated = await self.report_repo.update(
+                report_id,
+                status=target,
+                reviewer_id=user_id if target in {"approved", "rejected"} else None,
+                review_comment=comment if target in {"approved", "rejected"} else None,
+                reviewed_at=datetime.now(UTC) if target in {"approved", "rejected"} else None,
+                **extra,
             )
-        updated = await self.report_repo.update(
-            report_id,
-            status=target,
-            reviewer_id=user_id if target in {"approved", "rejected"} else None,
-            review_comment=comment if target in {"approved", "rejected"} else None,
-            reviewed_at=datetime.now(UTC) if target in {"approved", "rejected"} else None,
-            **extra,
-        )
-        await self.session.refresh(updated)
+            await self.session.refresh(updated)
         await self.submission_repo.create(
             report_id=report_id, submitted_by=user_id, status=target, comment=comment,
         )
@@ -135,6 +188,17 @@ class ReportService:
 
     async def submit(self, report_id: str, user_id: str, comment: str | None = None):
         return await self._transition(report_id, "submitted", user_id, comment)
+
+    async def redraft(
+        self,
+        report_id: str,
+        user: CurrentUser,
+    ):
+        report = await self.get(report_id)
+        await self.ensure_can_access(report, user)
+        if str(report.author_id) != user.id and "superadmin" not in user.roles:
+            raise HTTPException(status_code=403, detail="Only the author can redraft a report")
+        return await self._transition(report_id, "draft", user.id, None)
 
     async def review(
         self, report_id: str, reviewer_id: str, decision: str, comment: str | None = None,
@@ -146,10 +210,29 @@ class ReportService:
         return await self._transition(report_id, decision, reviewer_id, comment)
 
     # ── Payout (v8, Приложение №6) ─────────────────────────────────────────
-    async def _compute_payout(self, template_id: str, data_json: dict) -> int | None:
-        template = await self.template_repo.get(template_id)
+    async def _compute_payout(self, report) -> int:
+        template = await self.template_repo.get(str(report.template_id))
         if not template:
-            return None
+            return 0
+        coach = None
+        if report.coach_id:
+            coach = (
+                await self.session.execute(select(Coach).where(Coach.id == report.coach_id))
+            ).scalar_one_or_none()
+        tier = coach.incentive_tier if coach else None
+        if tier not in {"full", "basic"}:
+            return 0
+
+        program = (
+            await self.session.execute(
+                select(IncentiveProgram)
+                .where(IncentiveProgram.status == "active")
+                .limit(1),
+            )
+        ).scalars().first()
+        max_payout = program.max_payout if program else 50000
+        min_payout = program.min_payout if program else 25000
+
         fields = (template.structure_json or {}).get("fields", [])
         numeric = [
             f for f in fields
@@ -157,22 +240,24 @@ class ReportService:
             and (f.get("normFull") is not None or f.get("normBasic") is not None)
         ]
         if not numeric:
-            return None
+            return 0
 
         def _all_meet(attr: str) -> bool:
             for f in numeric:
+                if f.get(attr) is None:
+                    return False
                 try:
-                    value = float(data_json.get(f["key"], 0) or 0)
+                    value = float((report.data_json or {}).get(f["key"], 0) or 0)
                 except (TypeError, ValueError):
                     return False
                 if value < float(f[attr]):
                     return False
             return True
 
-        if all(f.get("normFull") is not None for f in numeric) and _all_meet("normFull"):
-            return 50000
-        if all(f.get("normBasic") is not None for f in numeric) and _all_meet("normBasic"):
-            return 25000
+        if tier == "full" and _all_meet("normFull"):
+            return max_payout
+        if tier == "basic" and _all_meet("normBasic"):
+            return min_payout
         return 0
 
     # ── Enrich ─────────────────────────────────────────────────────────────

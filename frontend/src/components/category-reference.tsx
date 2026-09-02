@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Info, ChevronDown, ChevronUp } from "lucide-react";
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { planCategories, type PlanCategoryId } from "@/lib/mock-data";
+import { planCategories, type PlanCategoryId } from "@/lib/plan-categories";
 
 interface CategoryReferenceProps {
   categoryId: PlanCategoryId;

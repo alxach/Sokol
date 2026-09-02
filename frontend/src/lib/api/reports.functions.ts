@@ -122,6 +122,10 @@ export async function submitReport(reportId: string): Promise<ReportDto> {
   return apiFetch<ReportDto>(`/reports/${reportId}/submit`, { method: "POST" });
 }
 
+export async function redraftReport(reportId: string): Promise<ReportDto> {
+  return apiFetch<ReportDto>(`/reports/${reportId}/redraft`, { method: "POST" });
+}
+
 export async function approveReport(reportId: string): Promise<ReportDto> {
   return apiFetch<ReportDto>(`/reports/${reportId}/approve`, { method: "POST" });
 }

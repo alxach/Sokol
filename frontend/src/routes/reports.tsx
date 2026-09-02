@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { FileText, FileDown, Plus, Search, CheckCircle, XCircle, Send, Eye, X, Trash2 } from "lucide-react";
+import { FileText, FileDown, Plus, Search, CheckCircle, XCircle, Send, Eye, X, Trash2, AlertTriangle } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
@@ -11,12 +11,35 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   type ReportDto, type ReportStatus,
-  fetchReports, fetchReport, submitReport, approveReport, rejectReport, deleteReport,
+  fetchReports, fetchReport, submitReport, approveReport, rejectReport, deleteReport, redraftReport,
   fetchReportTemplates, type ReportTemplateDto, type ReportFieldDto,
 } from "@/lib/api/reports.functions";
 import { generateReportDocx } from "@/lib/api/reports.functions";
 import { fetchGroups, type GroupDto } from "@/lib/api/groups.functions";
-import { calculateGross, calculateNdf, calculateInsurance } from "@/lib/mock-data";
+/**
+ * Server-authoritative payout calculation per Положение ред. 8, Приложение №6.
+ * Matches backend app/services/incentive_calc.py functions:
+ *   - base = net / (1 - NDFL_rate)
+ *   - gross = base * (1 + insurance_rate)
+ *   - ndfl = base * NDFL_rate
+ *   - insurance = base * insurance_rate
+ * All results rounded to kopecks (2 decimals).
+ */
+function calcPayoutBreakdown(net: number): {
+  gross: number;
+  ndfl: number;
+  insurance: number;
+} {
+  const base = net / 0.87;               // net / (1 - 13%)
+  const gross = base * 1.302;            // base * (1 + 30.2%)
+  const ndfl = base * 0.13;              // base * 13%
+  const insurance = base * 0.302;        // base * 30.2%
+  return {
+    gross: Number(gross.toFixed(2)),
+    ndfl: Number(ndfl.toFixed(2)),
+    insurance: Number(insurance.toFixed(2)),
+  };
+}
 
 function downloadBase64(base64: string, filename: string) {
   const byteChars = atob(base64);
@@ -398,6 +421,7 @@ function ReportDetailModal({
     runAction(() => rejectReport(report.id, rejectComment));
   };
   const handleSubmitDraft = () => runAction(() => submitReport(report.id));
+  const handleRedraft = () => runAction(() => redraftReport(report.id));
   const handleDelete = async () => {
     if (!window.confirm("Удалить черновик отчёта?")) return;
     setBusy(true);
@@ -414,7 +438,7 @@ function ReportDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10">
       <div className="w-full max-w-3xl rounded-2xl border border-border bg-card shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -536,37 +560,42 @@ function ReportDetailModal({
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs font-semibold text-secondary">Расчёт выплаты (Приложение №6)</span>
               <Badge variant="outline" className="text-xs font-normal">
-                {report.payout_tier === 50000 ? "50 000 ₽" : "25 000 ₽"}
+                {Number(report.payout_tier).toLocaleString("ru-RU")} ₽
               </Badge>
             </div>
             <div className="grid grid-cols-4 gap-4 rounded-lg border border-border bg-muted/20 p-3 text-sm">
-              {(() => {
-                const net = report.payout_tier;
-                const gross = calculateGross(net, 13, 30.2);
-                const ndfl = calculateNdf(gross, 13);
-                const insurance = calculateInsurance(gross, 30.2);
-                return (
-                  <>
-                    <div>
-                      <span className="text-xs text-muted-foreground">Выплата на карту (нетто)</span>
-                      <div className="font-display font-bold text-secondary">{net.toLocaleString("ru-RU")} ₽</div>
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted-foreground">НДФЛ (13%)</span>
-                      <div className="font-medium text-red-600 dark:text-red-400">−{ndfl.toLocaleString("ru-RU")} ₽</div>
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted-foreground">Страховые взносы (30,2%)</span>
-                      <div className="font-medium text-amber-600 dark:text-amber-400">{insurance.toLocaleString("ru-RU")} ₽</div>
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted-foreground">Итого брутто (затраты Организации)</span>
-                      <div className="font-display font-bold text-secondary">{gross.toLocaleString("ru-RU")} ₽</div>
-                    </div>
-                  </>
-                );
-              })()}
+{(() => {
+        const net = report.payout_tier!;
+        const {gross, ndfl, insurance} = calcPayoutBreakdown(net);
+        return (
+          <>
+            <div>
+              <span className="text-xs text-muted-foreground">Выплата на карту (нетто)</span>
+              <div className="font-display font-bold text-secondary">{net.toLocaleString("ru-RU")} ₽</div>
             </div>
+            <div>
+              <span className="text-xs text-muted-foreground">НДФЛ (13%)</span>
+              <div className="font-medium text-red-600 dark:text-red-400">−{ndfl.toLocaleString("ru-RU")} ₽</div>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Страховые взносы (30,2%)</span>
+              <div className="font-medium text-amber-600 dark:text-amber-400">{insurance.toLocaleString("ru-RU")} ₽</div>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Итого брутто (затраты Организации)</span>
+              <div className="font-display font-bold text-secondary">{gross.toLocaleString("ru-RU")} ₽</div>
+            </div>
+          </>
+        );
+      })()}
+            </div>
+          </div>
+        )}
+
+        {(report.status !== "draft" && (report.payout_tier == null || report.payout_tier <= 0)) && (
+          <div className="flex items-start gap-2 border-t border-border px-6 py-3 text-sm text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>Выплата не сформирована (0 ₽): тренеру не назначен тир (базовый/полный) или не выполнены нормы отчёта.</span>
           </div>
         )}
 
@@ -610,6 +639,21 @@ function ReportDetailModal({
                 </>
               )}
             </div>
+          </div>
+        )}
+
+        {report.status === "rejected" && isAuthor && (
+          <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
+            <Button
+              variant="outline"
+              onClick={handleRedraft}
+              disabled={busy}
+            >
+              <FileText className="mr-1.5 h-4 w-4" /> Вернуть в черновик
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Верните отчёт в черновик, внесите исправления и отправьте повторно.
+            </span>
           </div>
         )}
 

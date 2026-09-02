@@ -32,6 +32,7 @@ from app.repositories import (
     ResultRepository,
     SchedulePeriodRepository,
     ScheduleRepository,
+    TrainingRepository,
 )
 from app.services.athlete_service import AthleteService
 from app.services.attendance_service import AttendanceService
@@ -43,6 +44,7 @@ from app.services.incentive_service import IncentiveService
 from app.services.organization_service import OrganizationService
 from app.services.report_service import ReportService
 from app.services.schedule_service import ScheduleService
+from app.services.training_service import TrainingService
 
 
 async def get_organization_service(
@@ -58,6 +60,7 @@ async def get_athlete_service(session: AsyncSession = Depends(get_session)) -> A
         AthleteMedicalRepository(session),
         AthleteAchievementRepository(session),
         AthleteRankHistoryRepository(session),
+        GroupMemberRepository(session),
     )
 
 
@@ -118,4 +121,14 @@ async def get_incentive_service(session: AsyncSession = Depends(get_session)) ->
         CoachRepository(session),
         CenterRepository(session),
         IncentiveCriteriaRepository(session),
+    )
+
+
+async def get_training_service(session: AsyncSession = Depends(get_session)) -> TrainingService:
+    return TrainingService(
+        TrainingRepository(session),
+        CoachRepository(session),
+        CenterRepository(session),
+        EventPlanRepository(session),
+        PlanItemRepository(session),
     )

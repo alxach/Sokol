@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { CategoryReference } from "@/components/category-reference";
 import { useAuthGuard, useAuth } from "@/lib/auth";
-import { planCategories, planCategoryKeys, type PlanCategoryId, type Plan, type PlanStatus } from "@/lib/mock-data";
+import { planCategories, planCategoryKeys, type PlanCategoryId } from "@/lib/plan-categories";
+import { Plan, type PlanItem, type PlanStatus } from "@/lib/api/plans.functions";
 import { monthOptions, monthToQuarter, monthNumber, ensurePlan, addPlanItem, updatePlanItem, submitPlanItem, deletePlanItem } from "@/lib/api/plans.functions";
 import { statusConfig } from "@/routes/plans";
 

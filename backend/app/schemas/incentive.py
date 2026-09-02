@@ -1,8 +1,24 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+_Date = date
+
+
+class CoachTierUpdate(BaseModel):
+    tier: Literal["full", "basic"]
+
+
+class CoachTierOut(BaseModel):
+    coach_id: str
+    user_id: str
+    coach_name: str = ""
+    specialization: str = ""
+    tier: str | None = None
+    updated_at: datetime | None = None
 
 
 class IncentiveProgramCreate(BaseModel):
@@ -97,6 +113,8 @@ class IncentiveCriteriaOut(BaseModel):
     sports_events_basic: int
     development_events_full: int
     development_events_basic: int
+    assigned_tier: str | None = None
+    updated_at: datetime | None = None
 
 
 class CommissionProtocolCreate(BaseModel):
@@ -112,6 +130,18 @@ class CommissionProtocolCreate(BaseModel):
     voting_abstained: int = 0
 
 
+class CommissionProtocolUpdate(BaseModel):
+    number: str | None = None
+    date: _Date | None = None
+    beneficiary_name: str | None = None
+    period: str | None = None
+    agenda: str | None = None
+    decisions: str | None = None
+    voting_for: int | None = None
+    voting_against: int | None = None
+    voting_abstained: int | None = None
+
+
 class PayoutRowCreate(BaseModel):
     coach_id: str
     report_id: str | None = None
@@ -125,25 +155,13 @@ class PayoutRowCreate(BaseModel):
     net_amount: Decimal | None = None
 
 
-class CommissionProtocolResponse(BaseModel):
-    id: str
-    number: str
-    date: date
-    beneficiary_name: str
-    period: str
-    center_id: str
-    agenda: str | None
-    decisions: str | None
-    voting_for: int
-    voting_against: int
-    voting_abstained: int
+class PayoutRowOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
 
-
-class PayoutRowResponse(BaseModel):
-    id: str
-    protocol_id: str
-    coach_id: str
-    report_id: str | None
+    id: uuid.UUID
+    protocol_id: uuid.UUID
+    coach_id: uuid.UUID
+    report_id: uuid.UUID | None
     sport_type: str
     period_start: date
     period_end: date
@@ -151,6 +169,30 @@ class PayoutRowResponse(BaseModel):
     ndfl_amount: Decimal
     insurance_amount: Decimal
     net_amount: Decimal
+    coach_name: str = ""
+
+
+class CommissionProtocolOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    number: str
+    date: date
+    beneficiary_name: str
+    period: str
+    center_id: uuid.UUID
+    center_name: str = ""
+    agenda: str | None
+    decisions: str | None
+    voting_for: int
+    voting_against: int
+    voting_abstained: int
+    status: str
+    reviewer_id: uuid.UUID | None
+    review_comment: str | None
+    reviewed_at: datetime | None
+    created_at: datetime | None
+    payout_rows: list[PayoutRowOut] = []
 
 
 class EventPlanCreate(BaseModel):

@@ -76,7 +76,7 @@ async def test_admin_upsert_own_center(client, auth, set_admin_center, _addition
         assert updated.status_code == 200, updated.text
         assert updated.json()["athletes_full"] == 35
     finally:
-        await set_admin_center(None)
+        await set_admin_center(CENTER_ID)
 
 
 async def test_admin_cannot_edit_other_center(client, auth, set_admin_center, _additional_center):
@@ -90,7 +90,7 @@ async def test_admin_cannot_edit_other_center(client, auth, set_admin_center, _a
         )
         assert resp.status_code == 403, resp.text
     finally:
-        await set_admin_center(None)
+        await set_admin_center(CENTER_ID)
 
 
 async def test_director_and_superadmin_any_center(client, auth, _additional_center):
@@ -130,7 +130,7 @@ async def test_coach_read_only(client, auth, set_admin_center, _additional_cente
         )
         assert denied.status_code == 403, denied.text
     finally:
-        await set_admin_center(None)
+        await set_admin_center(CENTER_ID)
 
 
 async def test_upsert_validates_basic_not_above_full(client, auth, set_admin_center):
@@ -144,7 +144,7 @@ async def test_upsert_validates_basic_not_above_full(client, auth, set_admin_cen
         assert resp.status_code == 422, resp.text
         assert "полный порог" in resp.json()["detail"].lower()
     finally:
-        await set_admin_center(None)
+        await set_admin_center(CENTER_ID)
 
 
 async def test_director_lists_all_criteria_by_center_filter(client, auth, set_admin_center):
@@ -165,4 +165,4 @@ async def test_director_lists_all_criteria_by_center_filter(client, auth, set_ad
         ids = {row["center_id"] for row in listing.json()}
         assert CENTER_ID in ids
     finally:
-        await set_admin_center(None)
+        await set_admin_center(CENTER_ID)

@@ -147,8 +147,8 @@ function AdminUsersPage() {
 
   useEffect(() => {
     fetchRoles();
-    apiFetch<{ data: CenterOut[] }>("/organizations/centers")
-      .then((d) => setCenters(d.data))
+    apiFetch<CenterOut[] | { data: CenterOut[] }>("/organizations/centers")
+      .then((d) => setCenters(Array.isArray(d) ? d : (d?.data ?? [])))
       .catch(() => {});
   }, []);
 
@@ -471,10 +471,10 @@ function AdminUsersPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Центр</Label>
-              <Select value={form.center_id} onValueChange={(v) => setForm({ ...form, center_id: v })}>
+              <Select value={form.center_id} onValueChange={(v) => setForm({ ...form, center_id: v === "none" ? "" : v })}>
                 <SelectTrigger><SelectValue placeholder="Без центра" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Без центра</SelectItem>
+                  <SelectItem value="none">Без центра</SelectItem>
                   {centers.map((c) => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}

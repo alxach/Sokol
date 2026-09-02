@@ -92,7 +92,7 @@ erDiagram
         string rank
         date rank_assign_date
         string rank_order_number
-        string status
+        string status "active | inactive (ADR-025; 2 значения)"
         string enrollment_type
         text notes
         timestamp created_at
@@ -163,6 +163,7 @@ erDiagram
         string biography
         date hire_date
         boolean is_active
+        string incentive_tier "full|basic, NULLABLE"
         timestamp created_at
         timestamp updated_at
     }
@@ -257,6 +258,23 @@ erDiagram
         time valid_from
         time valid_until
         boolean is_active
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% ===== ТРЕНИРОВКИ С СОТРУДНИКАМИ РУСАЛ (ADR-026) =====
+    trainings {
+        uuid id PK
+        uuid center_id FK
+        uuid coach_id FK
+        date date
+        time start_time
+        string location
+        integer participants_count
+        text goal
+        string status "proposed|confirmed|cancelled"
+        uuid created_by FK
+        uuid plan_item_id FK
         timestamp created_at
         timestamp updated_at
     }
@@ -563,6 +581,11 @@ erDiagram
     athletes ||--o{ attendance : records
     schedules ||--o{ attendance_qr_codes : generates
 
+    centers ||--o{ trainings : hosts
+    coaches ||--o{ trainings : selected_by
+    users ||--o{ trainings : creates
+    trainings o|--o{ plan_items : linked_to
+
     centers ||--o{ events : organizes
     events ||--o{ competitions : includes
     competitions ||--o{ participants : registers
@@ -636,7 +659,7 @@ erDiagram
 
 | Таблица | Назначение | Ключевые поля |
 |---------|-----------|---------------|
-| `coaches` | Тренерские карточки | user_id → users, center_id, специализация, квалификация |
+| `coaches` | Тренерские карточки | user_id → users, center_id, специализация, квалификация, тир стимулирования |
 | `coach_categories` | Категории тренеров | coach_id, категория, срок действия |
 | `coach_vacations` | Отпуска тренеров | coach_id, start_date, end_date |
 | `coach_sick_leaves` | Больничные тренеров | coach_id, start_date, end_date |
@@ -649,6 +672,7 @@ erDiagram
 | `group_members` | Состав групп | group_id, athlete_id, дата вступления |
 | `schedules` | Расписание занятий | group_id, день недели (1-7), время, место |
 | `attendance` | Посещаемость | athlete_id, schedule_id, дата, статус, причина |
+| `trainings` | Тренировки с сотрудниками РУСАЛ (ADR-026) | center_id, coach_id, date, start_time, status, plan_item_id |
 | `attendance_qr_codes` | QR-коды для отметок | schedule_id, код, срок действия |
 
 ### 2.6 Соревнования и мероприятия

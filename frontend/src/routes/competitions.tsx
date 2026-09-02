@@ -20,6 +20,7 @@ import {
   type CompetitionDto, type CompetitionParticipantDto, type CompetitionChildDto,
 } from "@/lib/api/events.functions";
 import { fetchAthletes, athleteFullName, type AthleteDto } from "@/lib/api/athletes.functions";
+import { findCoachByUserId } from "@/lib/api/coaches.functions";
 
 export const Route = createFileRoute("/competitions")({
   head: () => ({
@@ -88,17 +89,38 @@ function CompetitionsPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingAthletes, setEditingAthletes] = useState<CompetitionDto | null>(null);
   const [editingDetails, setEditingDetails] = useState<CompetitionDto | null>(null);
+  const [coachProfileId, setCoachProfileId] = useState<string | null>(null);
 
   const coachId = user?.id ?? "";
   const coachName = user?.coachName ?? "";
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!isCoach || !user?.id) {
+      setCoachProfileId(null);
+      return;
+    }
+    findCoachByUserId(user.id)
+      .then((c) => {
+        if (!cancelled) setCoachProfileId(c?.id ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setCoachProfileId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCoach, user?.id]);
 
   const load = useCallback(async () => {
     try {
       const data = await fetchCompetitions();
       setItems(data);
       setItemsError(null);
+      return data;
     } catch (err) {
       setItemsError(err instanceof Error ? err.message : "Не удалось загрузить соревнования");
+      return null;
     } finally {
       setDataLoading(false);
     }
@@ -107,6 +129,14 @@ function CompetitionsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const syncModal = (data: CompetitionDto[] | null) => {
+    if (!data) return;
+    setEditingAthletes((prev) => {
+      if (!prev) return prev;
+      return data.find((x) => x.id === prev.id) ?? prev;
+    });
+  };
 
   const visible = useMemo(() => {
     if (isCoach) return items.filter((c) => c.coach_id === coachId);
@@ -204,7 +234,7 @@ function CompetitionsPage() {
     if (!comp) return;
     try {
       await addCompetitionParticipant(comp.id, athlete.id);
-      await load();
+      syncModal(await load());
     } catch (err) {
       alert(err instanceof Error ? err.message : "Не удалось добавить спортсмена");
     }
@@ -215,7 +245,7 @@ function CompetitionsPage() {
     if (!comp) return;
     try {
       await removeCompetitionParticipant(comp.id, athleteId);
-      await load();
+      syncModal(await load());
     } catch (err) {
       alert(err instanceof Error ? err.message : "Не удалось удалить спортсмена");
     }
@@ -230,7 +260,7 @@ function CompetitionsPage() {
       } else {
         await clearCompetitionResult(comp.id, athleteId);
       }
-      await load();
+      syncModal(await load());
     } catch (err) {
       alert(err instanceof Error ? err.message : "Не удалось сохранить результат");
     }
@@ -412,7 +442,7 @@ function CompetitionsPage() {
       {editingAthletes && (
         <ManageAthletesModal
           competition={editingAthletes}
-          coachId={coachId}
+          coachId={coachProfileId}
           onAddAthlete={handleAddAthlete}
           onRemoveAthlete={handleRemoveAthlete}
           onSetResult={handleSetResult}
@@ -575,7 +605,7 @@ function CompetitionFormModal({ defaultDiscipline, competition, onSave, onClose 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10">
       <div className="w-full max-w-lg rounded-2xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <h3 className="font-display text-lg font-bold text-secondary">{isEdit ? "Редактировать соревнование" : "Новое соревнование"}</h3>
@@ -656,7 +686,7 @@ function ManageAthletesModal({
   competition, coachId, onAddAthlete, onRemoveAthlete, onSetResult, onClose,
 }: {
   competition: CompetitionDto;
-  coachId: string;
+  coachId: string | null;
   onAddAthlete: (comp: CompetitionDto, athlete: AthleteDto) => void;
   onRemoveAthlete: (comp: CompetitionDto, athleteId: string) => void;
   onSetResult: (comp: CompetitionDto, athleteId: string, result: string | null) => void;
@@ -669,7 +699,7 @@ function ManageAthletesModal({
   useEffect(() => {
     let cancelled = false;
     setAthletesLoading(true);
-    fetchAthletes({ coachId })
+    fetchAthletes({ coachId: coachId ?? undefined })
       .then((res) => {
         if (!cancelled) {
           setCoachAthletes(res.items);
@@ -696,7 +726,7 @@ function ManageAthletesModal({
   const st = effectiveStatus(competition);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-10 pb-10">
       <div className="w-full max-w-2xl rounded-2xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>

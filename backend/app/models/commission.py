@@ -1,8 +1,8 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +24,14 @@ class CommissionProtocol(TimestampMixin, Base):
     voting_for: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     voting_against: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     voting_abstained: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True,
+    )
+    review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
 
     payout_rows: Mapped[list["PayoutRow"]] = relationship(
         back_populates="protocol", cascade="all, delete-orphan",
@@ -34,7 +42,9 @@ class PayoutRow(TimestampMixin, Base):
     __tablename__ = "payout_rows"
 
     protocol_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("commission_protocols.id", ondelete="CASCADE"), nullable=False,
+        UUID(as_uuid=True),
+        ForeignKey("commission_protocols.id", ondelete="CASCADE"),
+        nullable=False,
     )
     coach_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("coaches.id"), nullable=False,

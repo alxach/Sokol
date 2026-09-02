@@ -23,13 +23,16 @@ import {
   createAthlete,
   deleteAthlete,
   fetchAthletes,
+  transferAthlete,
+  updateAthlete,
   type AthleteDto,
   type AthleteStatusKey,
 } from "@/lib/api/athletes.functions";
-import { findCoachByUserId } from "@/lib/api/coaches.functions";
+import { fetchCoaches, findCoachByUserId, type CoachDto } from "@/lib/api/coaches.functions";
 import { exportToExcel, importAthletesFromExcel } from "@/lib/api/exports.functions";
 import { MiniStat } from "@/components/mini-stat";
 import { AthleteModal, disciplines } from "@/components/athlete-modal";
+import { isSportRank } from "@/lib/ranks";
 
 function downloadBase64(base64: string, filename: string) {
   const byteChars = atob(base64);
@@ -58,9 +61,6 @@ export const Route = createFileRoute("/athletes")({
 const statusStyle: Record<AthleteStatusKey, string> = {
   active: "bg-[color:var(--success)]/15 text-[color:var(--success)] border-[color:var(--success)]/30",
   inactive: "bg-primary/10 text-primary border-primary/30",
-  graduated: "bg-muted text-muted-foreground border-border",
-  transferred: "bg-accent/15 text-accent border-accent/30",
-  expelled: "bg-destructive/10 text-destructive border-destructive/30",
 };
 
 interface ImportedAthlete {
@@ -241,7 +241,7 @@ function AthletesPage() {
     const active = filtered.filter((a) => a.status === "active").length;
     const ages = filtered.map((a) => calcAge(a.birth_date)).filter((n) => n > 0);
     const avgAge = ages.length ? Math.round(ages.reduce((s, n) => s + n, 0) / ages.length) : 0;
-    const ranked = filtered.filter((a) => a.rank && a.rank.length > 0).length;
+    const ranked = filtered.filter((a) => isSportRank(a.rank)).length;
     return { total, active, avgAge, ranked };
   }, [filtered]);
 
@@ -428,6 +428,10 @@ function AthletesPage() {
         <AthleteDetailModal
           athlete={detailAthlete}
           onClose={() => setDetailAthlete(null)}
+          onChanged={(updated) => {
+            setDetailAthlete((prev) => (prev && prev.id === updated.id ? updated : prev));
+            loadList(myCoachId, isCoach);
+          }}
         />
       )}
 
@@ -473,8 +477,66 @@ function AthletesPage() {
 
 /* ---------- Athlete Detail Modal ---------- */
 
-function AthleteDetailModal({ athlete, onClose }: { athlete: AthleteDto; onClose: () => void }) {
+function AthleteDetailModal({
+  athlete,
+  onClose,
+  onChanged,
+}: {
+  athlete: AthleteDto;
+  onClose: () => void;
+  onChanged: (updated: AthleteDto) => void;
+}) {
   const status = (athlete.status as AthleteStatusKey) ?? "active";
+  const isArchived = status === "inactive";
+
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [coaches, setCoaches] = useState<CoachDto[]>([]);
+  const [targetCoachId, setTargetCoachId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const openTransfer = async () => {
+    setError("");
+    setTransferOpen(true);
+    try {
+      const list = await fetchCoaches();
+      setCoaches(list);
+    } catch {
+      setCoaches([]);
+    }
+  };
+
+  const handleRestore = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await updateAthlete(athlete.id, { status: "active" });
+      onChanged(updated);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось восстановить спортсмена");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleTransfer = async () => {
+    if (!targetCoachId) {
+      setError("Выберите тренера");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await transferAthlete(athlete.id, targetCoachId);
+      onChanged(updated);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось передать спортсмена");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
@@ -546,6 +608,54 @@ function AthleteDetailModal({ athlete, onClose }: { athlete: AthleteDto; onClose
               <div className="mt-0.5 font-medium text-secondary">{athlete.notes}</div>
             </div>
           )}
+
+          {isArchived && (
+            <div className="mt-5 rounded-lg border border-border p-4">
+              <p className="mb-3 text-sm font-medium text-secondary">Архивированный спортсмен</p>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Данные и история соревнований сохранены. Спортсмена можно восстановить или передать другому тренеру.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={openTransfer} disabled={busy}>
+                  Передать другому тренеру
+                </Button>
+                <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={handleRestore} disabled={busy}>
+                  Восстановить
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {transferOpen && (
+            <div className="mt-3 rounded-lg border border-border p-4">
+              <label className="mb-2 block text-xs font-medium text-muted-foreground">Выберите нового тренера</label>
+              <select
+                value={targetCoachId}
+                onChange={(e) => setTargetCoachId(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="">— выберите тренера —</option>
+                {coaches.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name || c.id}{c.center_city ? ` · ${c.center_city}` : ""}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-3 flex gap-2">
+                <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={handleTransfer} disabled={busy}>
+                  {busy ? "Передаём..." : "Передать"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setTransferOpen(false)} disabled={busy}>
+                  Отмена
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>
+          )}
+
           <div className="mt-5 flex items-center gap-2 rounded-lg bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
             <Info className="h-4 w-4" />
             Разделы «Достижения», «Посещаемость» и «Документы» появятся после перевода соответствующих модулей.

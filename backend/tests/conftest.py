@@ -27,6 +27,8 @@ PASSWORD = "Passw0rd!123"
 REGION_ID = "22222222-2222-2222-2222-222222222222"
 CENTER_ID = "11111111-1111-1111-1111-111111111111"
 COACH_ID = "33333333-3333-3333-3333-333333333333"
+CENTER2_ID = "44444444-1111-2222-3333-444444444444"
+COACH2_ID = "55555555-1111-2222-3333-555555555555"
 
 
 @pytest.fixture(scope="session")
@@ -106,6 +108,84 @@ async def seeded_org(session_maker, seeded_users):
             ),
             {"cid": COACH_ID, "center_id": CENTER_ID},
         )
+        await session.execute(
+            text("UPDATE users SET center_id = :c WHERE email = 'admin@example.com'"),
+            {"c": CENTER_ID},
+        )
+        await session.commit()
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def seeded_roster2(session_maker, seeded_org):
+    """Второй центр + admin2 (его руководитель) + coach2 (тренер) для scope-тестов."""
+    import uuid
+
+    from sqlalchemy import select
+
+    from app.core.security import hash_password
+    from app.models.user import Role, User, UserRole
+
+    async with session_maker() as session:
+        await session.execute(
+            text("INSERT INTO regions (id, name, code) VALUES (:id, 'Регион 2', 'TRB') "
+                 "ON CONFLICT (id) DO NOTHING"),
+            {"id": "66666666-2222-2222-2222-666666666666"},
+        )
+        await session.execute(
+            text("INSERT INTO centers (id, region_id, name, address, center_type, is_active) "
+                 "VALUES (:id, :rid, 'ЦСЕ Второй', 'addr2', 'cse', true) "
+                 "ON CONFLICT (id) DO NOTHING"),
+            {"id": CENTER2_ID, "rid": "66666666-2222-2222-2222-666666666666"},
+        )
+
+        admin_role = (await session.execute(
+            select(Role).where(Role.code == "admin")
+        )).scalar_one()
+        coach_role = (await session.execute(
+            select(Role).where(Role.code == "coach")
+        )).scalar_one()
+
+        admin2 = User(
+            email="admin2@example.com",
+            phone="+70000000008",
+            password_hash=hash_password(PASSWORD),
+            first_name="Admin2",
+            last_name="Test",
+            center_id=uuid.UUID(CENTER2_ID),
+        )
+        session.add(admin2)
+        await session.flush()
+        session.add(UserRole(user_id=admin2.id, role_id=admin_role.id))
+
+        coach2_user = User(
+            email="coach2@example.com",
+            phone="+70000000009",
+            password_hash=hash_password(PASSWORD),
+            first_name="Coach2",
+            last_name="Test",
+        )
+        session.add(coach2_user)
+        await session.flush()
+        session.add(UserRole(user_id=coach2_user.id, role_id=coach_role.id))
+        await session.flush()
+
+        await session.execute(
+            text(
+                "INSERT INTO coaches (id, user_id, center_id, specialization, is_active, "
+                "hire_date) "
+                "VALUES (:cid, :uid, :center2, 'Дзюдо', true, CURRENT_DATE) "
+                "ON CONFLICT (id) DO NOTHING",
+            ),
+            {"cid": COACH2_ID, "uid": coach2_user.id, "center2": CENTER2_ID},
+        )
+        await session.commit()
+
+
+@pytest.fixture(autouse=True)
+async def clean_attendance(session_maker):
+    """Isolate attendance rows: shared session-scoped DB has no cleanup between tests."""
+    async with session_maker() as session:
+        await session.execute(text("DELETE FROM attendance"))
         await session.commit()
 
 

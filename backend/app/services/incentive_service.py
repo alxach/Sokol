@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.dependencies import CurrentUser
 from app.models.coach import Coach
+from app.models.commission import CommissionProtocol
 from app.models.event_plan import EventPlan, PlanItem
 from app.models.incentive_criteria import IncentiveCriteria
 from app.models.user import User
@@ -20,7 +21,11 @@ from app.repositories import (
     PlanItemRepository,
 )
 from app.schemas.incentive import (
+    CoachTierOut,
+    CoachTierUpdate,
     CommissionProtocolCreate,
+    CommissionProtocolOut,
+    CommissionProtocolUpdate,
     EventPlanCreate,
     EventPlanOut,
     EventPlanUpdate,
@@ -29,6 +34,7 @@ from app.schemas.incentive import (
     IncentiveProgramCreate,
     IncentiveProgramUpdate,
     PayoutRowCreate,
+    PayoutRowOut,
     PlanItemCreate,
     PlanItemOut,
     PlanItemUpdate,
@@ -228,7 +234,10 @@ class IncentiveService:
             target_center = str(user_row.center_id)
 
         rows: list[IncentiveCriteria] = []
+        own_coach: Coach | None = None
         if target_center:
+            if "coach" in user.roles and not user.has_any_role("admin", "director", "superadmin"):
+                own_coach = await self._coach_of(user) or own_coach
             row = await self.criteria_repo.get_by_center(target_center)
             rows = [row] if row else []
         else:
@@ -238,6 +247,8 @@ class IncentiveService:
         for row in rows:
             out = IncentiveCriteriaOut.model_validate(row)
             out.center_name = await self._center_name(str(row.center_id))
+            if own_coach and out.center_id == own_coach.center_id:
+                out.assigned_tier = own_coach.incentive_tier
             result.append(out)
         return result
 
@@ -269,6 +280,7 @@ class IncentiveService:
             row.updated_by = user.id
             try:
                 await self.criteria_repo.session.flush()
+                await self.criteria_repo.session.refresh(row)
             except IntegrityError:
                 await self.criteria_repo.session.rollback()
                 raise HTTPException(status_code=409, detail="Conflict on criteria update")
@@ -276,10 +288,78 @@ class IncentiveService:
             row = await self.criteria_repo.create(
                 center_id=center_id, updated_by=user.id, **payload,
             )
+            await self.criteria_repo.session.refresh(row)
 
         out = IncentiveCriteriaOut.model_validate(row)
         out.center_name = await self._center_name(str(row.center_id))
         return out
+
+    # ------------------------------------------------------------------ coach tiers
+
+    async def _check_tier_manage_rights(self, user: CurrentUser, coach: Coach) -> User:
+        if "superadmin" in user.roles or "director" in user.roles:
+            return await self._user_row(user)
+        if "admin" in user.roles:
+            user_row = await self._user_row(user)
+            if not user_row.center_id:
+                raise HTTPException(
+                    status_code=403, detail="Администратор не привязан к центру",
+                )
+            if coach.center_id and str(user_row.center_id) != str(coach.center_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Администратор может назначать тир только тренерам своего центра",
+                )
+            return user_row
+        raise HTTPException(status_code=403, detail="Нет прав на назначение тира")
+
+    async def list_coach_tiers(
+        self, user: CurrentUser, center_id: str | None = None,
+    ) -> list[CoachTierOut]:
+        if "superadmin" in user.roles or "director" in user.roles:
+            target_center = center_id
+        elif "admin" in user.roles:
+            user_row = await self._user_row(user)
+            if not user_row.center_id:
+                return []
+            target_center = str(user_row.center_id)
+        else:
+            raise HTTPException(status_code=403, detail="Нет прав на просмотр назначений")
+
+        coaches, _ = await self.coach_repo.list(center_id=target_center)
+        result: list[CoachTierOut] = []
+        for coach in coaches:
+            result.append(
+                CoachTierOut(
+                    coach_id=str(coach.id),
+                    user_id=str(coach.user_id),
+                    coach_name=await self._coach_name(str(coach.id)),
+                    specialization=coach.specialization,
+                    tier=coach.incentive_tier,
+                    updated_at=coach.updated_at,
+                ),
+            )
+        return result
+
+    async def set_coach_tier(
+        self, coach_id: str, data: CoachTierUpdate, user: CurrentUser,
+    ) -> CoachTierOut:
+        found, _ = await self.coach_repo.list(id=coach_id)
+        if not found:
+            raise HTTPException(status_code=404, detail="Тренер не найден")
+        coach = found[0]
+        await self._check_tier_manage_rights(user, coach)
+        coach.incentive_tier = data.tier
+        await self.coach_repo.session.flush()
+        await self.coach_repo.session.refresh(coach)
+        return CoachTierOut(
+            coach_id=str(coach.id),
+            user_id=str(coach.user_id),
+            coach_name=await self._coach_name(str(coach.id)),
+            specialization=coach.specialization,
+            tier=coach.incentive_tier,
+            updated_at=coach.updated_at,
+        )
 
     async def create_plan(self, data: EventPlanCreate, user: CurrentUser):
         if "superadmin" in user.roles:
@@ -526,20 +606,148 @@ class IncentiveService:
     ) -> PlanItemOut:
         return await self._review_item(item_id, user, comment, "reject")
 
-    async def create_protocol(self, data: CommissionProtocolCreate):
-        return await self.protocol_repo.create(**data.model_dump())
+    async def _get_protocol_or_404(self, protocol_id: str) -> CommissionProtocol:
+        protocol = await self.protocol_repo.get(protocol_id)
+        if not protocol:
+            raise HTTPException(status_code=404, detail="Протокол не найден")
+        return protocol
 
-    async def list_protocols(self, center_id: str | None = None):
+    def _require_protocol_draft(self, protocol: CommissionProtocol) -> None:
+        if protocol.status != "draft":
+            raise HTTPException(
+                status_code=422, detail="Изменять или удалять можно только черновик",
+            )
+
+    async def _coach_name(self, coach_id: str) -> str:
+        coaches, _ = await self.coach_repo.list(id=coach_id)
+        if not coaches:
+            return ""
+        coach = coaches[0]
+        result = await self.plan_repo.session.execute(
+            select(User).where(User.id == coach.user_id),
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            return ""
+        return f"{user.last_name} {user.first_name}" + (
+            f" {user.middle_name}" if user.middle_name else ""
+        )
+
+    async def _enrich_protocol(self, protocol: CommissionProtocol) -> CommissionProtocolOut:
+        payload = {
+            "id": protocol.id,
+            "number": protocol.number,
+            "date": protocol.date,
+            "beneficiary_name": protocol.beneficiary_name,
+            "period": protocol.period,
+            "center_id": protocol.center_id,
+            "agenda": protocol.agenda,
+            "decisions": protocol.decisions,
+            "voting_for": protocol.voting_for,
+            "voting_against": protocol.voting_against,
+            "voting_abstained": protocol.voting_abstained,
+            "status": protocol.status,
+            "reviewer_id": protocol.reviewer_id,
+            "review_comment": protocol.review_comment,
+            "reviewed_at": protocol.reviewed_at,
+            "created_at": protocol.created_at,
+        }
+        out = CommissionProtocolOut.model_validate(payload)
+        out.center_name = await self._center_name(str(protocol.center_id))
+        rows, _ = await self.payout_repo.list(protocol_id=str(protocol.id))
+        enriched: list[PayoutRowOut] = []
+        for row in rows:
+            payout_out = PayoutRowOut.model_validate(row)
+            payout_out.coach_name = await self._coach_name(str(row.coach_id))
+            enriched.append(payout_out)
+        out.payout_rows = enriched
+        return out
+
+    async def create_protocol(
+        self, data: CommissionProtocolCreate, user: CurrentUser,
+    ):
+        if "admin" in user.roles and "superadmin" not in user.roles:
+            user_row = await self._user_row(user)
+            if not user_row.center_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Администратор не привязан к центру",
+                )
+            if str(user_row.center_id) != str(data.center_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Администратор может создавать протоколы только своего центра",
+                )
+        return await self._enrich_protocol(
+            await self.protocol_repo.create(**data.model_dump()),
+        )
+
+    async def list_protocols(
+        self, center_id: str | None = None, user: CurrentUser | None = None,
+    ):
         filters = {}
         if center_id:
             filters["center_id"] = center_id
+        elif user and "admin" in user.roles and "superadmin" not in user.roles:
+            user_row = await self._user_row(user)
+            if not user_row.center_id:
+                return []
+            filters["center_id"] = str(user_row.center_id)
         protocols, _ = await self.protocol_repo.list(**filters)
-        return protocols
+        return [await self._enrich_protocol(protocol) for protocol in protocols]
 
     async def get_protocol(self, id: str):
-        return await self.protocol_repo.get(id)
+        protocol = await self._get_protocol_or_404(id)
+        return await self._enrich_protocol(protocol)
+
+    async def update_protocol(self, protocol_id: str, data: CommissionProtocolUpdate):
+        protocol = await self._get_protocol_or_404(protocol_id)
+        self._require_protocol_draft(protocol)
+        payload = data.model_dump(exclude_unset=True)
+        if not payload:
+            raise HTTPException(status_code=422, detail="Nothing to update")
+        for key, value in payload.items():
+            setattr(protocol, key, value)
+        await self.protocol_repo.session.flush()
+        return await self._enrich_protocol(protocol)
+
+    async def delete_protocol(self, protocol_id: str) -> dict:
+        protocol = await self._get_protocol_or_404(protocol_id)
+        self._require_protocol_draft(protocol)
+        await self.protocol_repo.delete(str(protocol.id))
+        return {"ok": True}
+
+    async def review_protocol(
+        self, protocol_id: str, user: CurrentUser, comment: str | None, action: str,
+    ) -> CommissionProtocolOut:
+        protocol = await self._get_protocol_or_404(protocol_id)
+        if protocol.status != "draft":
+            raise HTTPException(
+                status_code=422, detail="Проверить можно только черновик протокола",
+            )
+        if action == "reject" and not (comment or "").strip():
+            raise HTTPException(status_code=422, detail="Комментарий обязателен")
+        protocol.status = "approved" if action == "approve" else "rejected"
+        protocol.reviewer_id = user.id
+        protocol.reviewed_at = datetime.now(_UTC)
+        if action == "reject":
+            protocol.review_comment = (comment or "").strip()
+        await self.protocol_repo.session.flush()
+        return await self._enrich_protocol(protocol)
+
+    async def approve_protocol(
+        self, protocol_id: str, user: CurrentUser,
+    ) -> CommissionProtocolOut:
+        return await self.review_protocol(protocol_id, user, None, "approve")
+
+    async def reject_protocol(
+        self, protocol_id: str, comment: str, user: CurrentUser,
+    ) -> CommissionProtocolOut:
+        return await self.review_protocol(protocol_id, user, comment, "reject")
 
     async def add_payout_row(self, protocol_id: str, data: PayoutRowCreate):
+        protocol = await self._get_protocol_or_404(protocol_id)
+        self._require_protocol_draft(protocol)
         ndfl_rate = DEFAULT_NDFL_RATE
         insurance_rate = DEFAULT_INSURANCE_RATE
         min_payout, max_payout = DEFAULT_MIN_PAYOUT, DEFAULT_MAX_PAYOUT
@@ -560,8 +768,26 @@ class IncentiveService:
         payload["ndfl_amount"] = breakdown.ndfl_amount
         payload["insurance_amount"] = breakdown.insurance_amount
         payload["net_amount"] = breakdown.net_amount
-        return await self.payout_repo.create(protocol_id=protocol_id, **payload)
+        row = await self.payout_repo.create(protocol_id=protocol_id, **payload)
+        out = PayoutRowOut.model_validate(row)
+        out.coach_name = await self._coach_name(str(row.coach_id))
+        return out
 
     async def list_payout_rows(self, protocol_id: str):
+        await self._get_protocol_or_404(protocol_id)
         rows, _ = await self.payout_repo.list(protocol_id=protocol_id)
-        return rows
+        result: list[PayoutRowOut] = []
+        for row in rows:
+            out = PayoutRowOut.model_validate(row)
+            out.coach_name = await self._coach_name(str(row.coach_id))
+            result.append(out)
+        return result
+
+    async def delete_payout_row(self, payout_id: str) -> dict:
+        row = await self.payout_repo.get(payout_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Строка выплаты не найдена")
+        protocol = await self._get_protocol_or_404(str(row.protocol_id))
+        self._require_protocol_draft(protocol)
+        await self.payout_repo.delete(payout_id)
+        return {"ok": True}

@@ -34,6 +34,7 @@ import {
   type CoachDto,
   type CoachLeaveEntry,
 } from "@/lib/api/coaches.functions";
+import { LeaveSection } from "@/components/coach/LeaveSection";
 import type { Center } from "@/lib/api/organizations.functions";
 import { fetchCenters } from "@/lib/api/organizations.functions";
 
@@ -395,8 +396,12 @@ function CoachDetailModal({
       setQualification(coach.qualification ?? "Без категории");
       setBiography(coach.biography ?? "");
       setIsActive(coach.is_active);
-      setVacations(coach.vacations.map((v) => ({ start_date: v.start_date, end_date: v.end_date })));
-      setSickLeaves(coach.sick_leaves.map((s) => ({ start_date: s.start_date, end_date: s.end_date })));
+      const v = coach.vacations.map((x) => ({ start_date: x.start_date, end_date: x.end_date }));
+      if (v.length === 0) v.push({ start_date: "", end_date: "" });
+      setVacations(v);
+      const s = coach.sick_leaves.map((x) => ({ start_date: x.start_date, end_date: x.end_date }));
+      if (s.length === 0) s.push({ start_date: "", end_date: "" });
+      setSickLeaves(s);
       setError(null);
       setEditing(true);
     } else {
@@ -570,6 +575,23 @@ function CoachDetailModal({
             onAdd={() => setVacations((prev) => [...prev, { start_date: "", end_date: "" }])}
             onRemove={(i) => setVacations((prev) => prev.filter((_, j) => j !== i))}
             onUpdate={(i, field, value) => updatePeriod(vacations, setVacations, i, field, value)}
+            onValidate={(periods) => {
+              const valid = periods.filter((p) => p.start_date && p.end_date);
+              for (let i = 0; i < valid.length; i++) {
+                for (let j = i + 1; j < valid.length; j++) {
+                  const a = valid[i];
+                  const b = valid[j];
+                  const startA = new Date(`${a.start_date}T00:00:00`);
+                  const endA = new Date(`${a.end_date}T00:00:00`);
+                  const startB = new Date(`${b.start_date}T00:00:00`);
+                  const endB = new Date(`${b.end_date}T00:00:00`);
+                  if (startA <= endB && startB <= endA) {
+                    return `Отпуск: периоды ${i + 1} и ${j + 1} пересекаются`;
+                  }
+                }
+              }
+              return null;
+            }}
           />
 
           <LeaveSection
@@ -581,6 +603,23 @@ function CoachDetailModal({
             onAdd={() => setSickLeaves((prev) => [...prev, { start_date: "", end_date: "" }])}
             onRemove={(i) => setSickLeaves((prev) => prev.filter((_, j) => j !== i))}
             onUpdate={(i, field, value) => updatePeriod(sickLeaves, setSickLeaves, i, field, value)}
+            onValidate={(periods) => {
+              const valid = periods.filter((p) => p.start_date && p.end_date);
+              for (let i = 0; i < valid.length; i++) {
+                for (let j = i + 1; j < valid.length; j++) {
+                  const a = valid[i];
+                  const b = valid[j];
+                  const startA = new Date(`${a.start_date}T00:00:00`);
+                  const endA = new Date(`${a.end_date}T00:00:00`);
+                  const startB = new Date(`${b.start_date}T00:00:00`);
+                  const endB = new Date(`${b.end_date}T00:00:00`);
+                  if (startA <= endB && startB <= endA) {
+                    return `Больничный: периоды ${i + 1} и ${j + 1} пересекаются`;
+                  }
+                }
+              }
+              return null;
+            }}
           />
 
           {editing && error && (
@@ -599,114 +638,6 @@ function CoachDetailModal({
             </Button>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function LeaveSection({
-  title,
-  periods,
-  editing,
-  tone,
-  emptyLabel,
-  onAdd,
-  onRemove,
-  onUpdate,
-}: {
-  title: string;
-  periods: CoachLeaveEntry[];
-  editing: boolean;
-  tone: "primary" | "destructive";
-  emptyLabel: string;
-  onAdd: () => void;
-  onRemove: (i: number) => void;
-  onUpdate: (i: number, field: "start_date" | "end_date", value: string) => void;
-}) {
-  const active = periods.some((p) =>
-    p.start_date && p.end_date
-      ? (() => {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const start = new Date(`${p.start_date}T00:00:00`);
-          const end = new Date(`${p.end_date}T00:00:00`);
-          return start <= today && today <= end;
-        })()
-      : false,
-  );
-  const activeLabel = tone === "primary" ? "В отпуске" : "На больничном";
-  const idleLabel = tone === "primary" ? "Работает" : "Здоров";
-
-  return (
-    <div className="border-t border-border pt-5">
-      <div className="mb-3 flex items-center justify-between">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h4>
-        <div className="flex items-center gap-2">
-          <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
-            active
-              ? tone === "primary"
-                ? "bg-primary/10 text-primary border-primary/30"
-                : "bg-destructive/10 text-destructive border-destructive/30"
-              : "bg-[color:var(--success)]/15 text-[color:var(--success)] border-[color:var(--success)]/30"
-          }`}>
-            {active ? activeLabel : idleLabel}
-          </span>
-          {editing && (
-            <button
-              onClick={onAdd}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground"
-              aria-label={`Добавить запись: ${title}`}
-            >
-              <CalendarIcon className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
-      {periods.length === 0 && !editing && (
-        <p className="text-sm text-muted-foreground">{emptyLabel}</p>
-      )}
-      <div className="space-y-2">
-        {periods.map((v, i) => (
-          <div key={`${v.start_date}-${v.end_date}-${i}`} className="flex items-start gap-2 rounded-lg border border-border bg-muted/20 p-2.5">
-            <div className="flex flex-1 flex-col gap-2 sm:flex-row">
-              <div className="flex-1">
-                <span className="block text-[10px] uppercase text-muted-foreground">С</span>
-                {editing ? (
-                  <input
-                    type="date"
-                    value={v.start_date}
-                    onChange={(e) => onUpdate(i, "start_date", e.target.value)}
-                    className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                ) : (
-                  <div className="mt-0.5 text-xs text-secondary">{formatDate(v.start_date)}</div>
-                )}
-              </div>
-              <div className="flex-1">
-                <span className="block text-[10px] uppercase text-muted-foreground">По</span>
-                {editing ? (
-                  <input
-                    type="date"
-                    value={v.end_date}
-                    onChange={(e) => onUpdate(i, "end_date", e.target.value)}
-                    className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                ) : (
-                  <div className="mt-0.5 text-xs text-secondary">{formatDate(v.end_date)}</div>
-                )}
-              </div>
-            </div>
-            {editing && (
-              <button
-                onClick={() => onRemove(i)}
-                className="mt-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"
-                aria-label={`Удалить запись: ${title}`}
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        ))}
       </div>
     </div>
   );

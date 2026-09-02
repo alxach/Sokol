@@ -28,6 +28,7 @@ __all__ = [
     "PlanItemRepository",
     "CommissionProtocolRepository",
     "PayoutRowRepository",
+    "TrainingRepository",
 ]
 
 from app.repositories.athlete_repo import (
@@ -66,3 +67,4 @@ from app.repositories.report_repo import (
     ReportTemplateRepository,
 )
 from app.repositories.schedule_repo import SchedulePeriodRepository, ScheduleRepository
+from app.repositories.training_repo import TrainingRepository

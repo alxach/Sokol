@@ -3,7 +3,9 @@ from fastapi import APIRouter, Depends
 from app.core.dependencies import CurrentUser, get_current_user, require_roles
 from app.dependencies import get_incentive_service
 from app.schemas.incentive import (
+    CoachTierUpdate,
     CommissionProtocolCreate,
+    CommissionProtocolUpdate,
     EventPlanCreate,
     EventPlanUpdate,
     IncentiveCriteriaUpsert,
@@ -67,6 +69,28 @@ async def upsert_criteria(
     service: IncentiveService = Depends(get_incentive_service),
 ):
     return await service.upsert_criteria(center_id, data, user)
+
+
+@router.get("/coach-tiers", dependencies=[Depends(require_roles("admin", "director"))])
+async def list_coach_tiers(
+    center_id: str | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    service: IncentiveService = Depends(get_incentive_service),
+):
+    return await service.list_coach_tiers(user, center_id=center_id)
+
+
+@router.put(
+    "/coach-tiers/{coach_id}",
+    dependencies=[Depends(require_roles("admin", "director"))],
+)
+async def set_coach_tier(
+    coach_id: str,
+    data: CoachTierUpdate,
+    user: CurrentUser = Depends(get_current_user),
+    service: IncentiveService = Depends(get_incentive_service),
+):
+    return await service.set_coach_tier(coach_id, data, user)
 
 
 @router.post("/plans")
@@ -200,17 +224,19 @@ async def reject_plan_item(
 @router.post("/protocols", dependencies=[Depends(require_roles("admin", "director"))])
 async def create_protocol(
     data: CommissionProtocolCreate,
+    user: CurrentUser = Depends(get_current_user),
     service: IncentiveService = Depends(get_incentive_service),
 ):
-    return await service.create_protocol(data)
+    return await service.create_protocol(data, user)
 
 
 @router.get("/protocols", dependencies=[Depends(require_roles("admin", "director"))])
 async def list_protocols(
     center_id: str | None = None,
+    user: CurrentUser = Depends(get_current_user),
     service: IncentiveService = Depends(get_incentive_service),
 ):
-    return await service.list_protocols(center_id=center_id)
+    return await service.list_protocols(center_id=center_id, user=user)
 
 
 @router.get("/protocols/{protocol_id}", dependencies=[Depends(require_roles("admin", "director"))])
@@ -219,6 +245,54 @@ async def get_protocol(
     service: IncentiveService = Depends(get_incentive_service),
 ):
     return await service.get_protocol(protocol_id)
+
+
+@router.patch(
+    "/protocols/{protocol_id}",
+    dependencies=[Depends(require_roles("admin", "director"))],
+)
+async def update_protocol(
+    protocol_id: str,
+    data: CommissionProtocolUpdate,
+    service: IncentiveService = Depends(get_incentive_service),
+):
+    return await service.update_protocol(protocol_id, data)
+
+
+@router.delete(
+    "/protocols/{protocol_id}",
+    dependencies=[Depends(require_roles("admin", "director"))],
+)
+async def delete_protocol(
+    protocol_id: str,
+    service: IncentiveService = Depends(get_incentive_service),
+):
+    return await service.delete_protocol(protocol_id)
+
+
+@router.post(
+    "/protocols/{protocol_id}/approve",
+    dependencies=[Depends(require_roles("admin", "director"))],
+)
+async def approve_protocol(
+    protocol_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    service: IncentiveService = Depends(get_incentive_service),
+):
+    return await service.approve_protocol(protocol_id, user)
+
+
+@router.post(
+    "/protocols/{protocol_id}/reject",
+    dependencies=[Depends(require_roles("admin", "director"))],
+)
+async def reject_protocol(
+    protocol_id: str,
+    body: PlanItemReview,
+    user: CurrentUser = Depends(get_current_user),
+    service: IncentiveService = Depends(get_incentive_service),
+):
+    return await service.reject_protocol(protocol_id, body.comment, user)
 
 
 @router.post(
@@ -242,3 +316,14 @@ async def list_payout_rows(
     service: IncentiveService = Depends(get_incentive_service),
 ):
     return await service.list_payout_rows(protocol_id)
+
+
+@router.delete(
+    "/protocols/{protocol_id}/payouts/{payout_id}",
+    dependencies=[Depends(require_roles("admin", "director"))],
+)
+async def delete_payout_row(
+    payout_id: str,
+    service: IncentiveService = Depends(get_incentive_service),
+):
+    return await service.delete_payout_row(payout_id)

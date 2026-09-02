@@ -21,9 +21,12 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { fetchCenters, type Center } from "@/lib/api/organizations.functions";
 import {
   fetchCriteria, saveCriteria, DEFAULT_CRITERIA,
+  fetchCoachTiers, setCoachTier,
+  type CoachTier, type CoachTierRecord,
   type IncentiveCriteria, type IncentiveCriteriaPayload,
 } from "@/lib/api/criteria.functions";
 
@@ -191,6 +194,142 @@ function ProgramsTable({
 function parseNum(v: string): number | null {
   const n = Number(String(v).replace(",", "."));
   return Number.isFinite(n) ? n : null;
+}
+
+const TIER_LABELS: Record<CoachTier, string> = {
+  full: "Полный",
+  basic: "Базовый",
+};
+
+function CoachTiersCard({ centerId }: { centerId: string }) {
+  const [tiers, setTiers] = useState<CoachTierRecord[] | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, CoachTier>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTiers(null);
+    setDrafts({});
+    (async () => {
+      try {
+        const data = await fetchCoachTiers(centerId);
+        if (!cancelled) setTiers(data);
+      } catch (err) {
+        if (!cancelled) setMsg({ kind: "err", text: apiErrorMessage(err) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [centerId]);
+
+  const selectedOf = (r: CoachTierRecord): string =>
+    drafts[r.coach_id] ?? r.tier ?? "";
+
+  const dirtyOf = (r: CoachTierRecord): boolean =>
+    (drafts[r.coach_id] ?? r.tier) !== r.tier;
+
+  const save = async (r: CoachTierRecord, tier: CoachTier) => {
+    setSavingId(r.coach_id);
+    setMsg(null);
+    try {
+      const updated = await setCoachTier(r.coach_id, tier);
+      setTiers((prev) =>
+        (prev ?? []).map((t) => (t.coach_id === updated.coach_id ? updated : t)),
+      );
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[r.coach_id];
+        return next;
+      });
+      setMsg({ kind: "ok", text: `Тир «${TIER_LABELS[tier]}» сохранён для ${updated.coach_name}` });
+    } catch (err) {
+      setMsg({ kind: "err", text: apiErrorMessage(err) });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  return (
+    <Card>
+      <div className="px-4 py-3 border-b">
+        <h2 className="text-sm font-semibold">Назначение выплат тренерам</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Руководитель центра задаёт каждому тренеру базовый или полный тир. Сумма и нормы отчёта зависят от назначенного тира.
+        </p>
+      </div>
+
+      {msg && (
+        <div className={`px-4 py-3 text-sm border-b ${msg.kind === "ok" ? "bg-green-100 text-green-800" : "bg-destructive/10 text-destructive"}`}>
+          {msg.text}
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        {tiers === null ? (
+          <div className="px-4 py-8 text-center text-muted-foreground text-sm">Загрузка тренеров…</div>
+        ) : tiers.length === 0 ? (
+          <div className="px-4 py-8 text-center text-muted-foreground text-sm">В этом центре пока нет тренеров</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                <th className="px-4 py-3 font-medium">Тренер</th>
+                <th className="px-4 py-3 font-medium w-44">Тир выплаты</th>
+                <th className="px-4 py-3 font-medium w-32 text-right">Действие</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tiers.map((r) => (
+                <tr key={r.coach_id} className="border-b last:border-0">
+                  <td className="px-4 py-3">
+                    <span className="font-medium">{r.coach_name || r.user_id}</span>
+                    {r.specialization && <span className="block text-xs text-muted-foreground">{r.specialization}</span>}
+                    {!r.tier && !drafts[r.coach_id] && (
+                      <Badge variant="outline" className="mt-1 text-xs bg-amber-50 text-amber-700 border-amber-200">
+                        не назначено
+                      </Badge>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <RadioGroup
+                      className="flex gap-4"
+                      value={selectedOf(r)}
+                      onValueChange={(v) => {
+                        if (v === "full" || v === "basic") {
+                          setDrafts((prev) => ({ ...prev, [r.coach_id]: v }));
+                        }
+                      }}
+                    >
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <RadioGroupItem value="full" />
+                        Полный
+                      </label>
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <RadioGroupItem value="basic" />
+                        Базовый
+                      </label>
+                    </RadioGroup>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        variant={dirtyOf(r) ? "default" : "outline"}
+                        disabled={!dirtyOf(r) || savingId !== null}
+                        onClick={() => drafts[r.coach_id] && save(r, drafts[r.coach_id]!)}
+                      >
+                        {savingId === r.coach_id ? "Сохранение…" : "Сохранить"}
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </Card>
+  );
 }
 
 function CriteriaTab() {
@@ -367,6 +506,7 @@ function CriteriaTab() {
           </div>
         </Card>
       ) : (
+        <>
         <Card>
           <div className="overflow-hidden">
             <table className="w-full text-sm">
@@ -420,6 +560,9 @@ function CriteriaTab() {
             </Button>
           </div>
         </Card>
+
+        <CoachTiersCard centerId={selectedCenterId} />
+        </>
       )}
     </div>
   );

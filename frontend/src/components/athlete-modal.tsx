@@ -11,17 +11,16 @@ import {
   type AthleteDto,
   type AthleteStatusKey,
 } from "@/lib/api/athletes.functions";
+import { rankOptions, NO_RANK } from "@/lib/ranks";
 
 export const disciplines = ["Дзюдо", "Самбо", "Бокс", "ММА", "Борьба"];
-export const rankOptions = ["КМС", "МС", "МСМК", "ЗМС", "1-й разряд", "2-й разряд", "3-й разряд"];
 
 const statusOptions: AthleteStatusKey[] = [
   "active",
   "inactive",
-  "graduated",
-  "transferred",
-  "expelled",
 ];
+
+const LEAVES_GROUPS: AthleteStatusKey[] = ["inactive"];
 
 type AthleteForm = {
   name: string;
@@ -45,7 +44,7 @@ function formFromAthlete(a: AthleteDto): AthleteForm {
   return {
     name: athleteFullName(a),
     discipline: a.sport_type,
-    rank: a.rank ?? "КМС",
+    rank: a.rank ?? NO_RANK,
     dob: a.birth_date,
     gender: a.gender,
     status: (a.status as AthleteStatusKey) || "active",
@@ -69,7 +68,7 @@ export function AthleteModal({
 
   const [name, setName] = useState(initial?.name ?? "");
   const [discipline, setDiscipline] = useState(initial?.discipline ?? "Дзюдо");
-  const [rank, setRank] = useState(initial?.rank ?? "КМС");
+  const [rank, setRank] = useState(initial?.rank ?? NO_RANK);
   const [dob, setDob] = useState(initial?.dob ?? "");
   const [gender, setGender] = useState(initial?.gender ?? "male");
   const [status, setStatus] = useState<AthleteStatusKey>(initial?.status ?? "active");
@@ -114,6 +113,7 @@ export function AthleteModal({
           birth_date: dob,
           gender,
           sport_type: discipline,
+          rank: rank || undefined,
           coach_id: coachId,
           notes: notes || undefined,
         });
@@ -181,18 +181,25 @@ export function AthleteModal({
               </select>
             </div>
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Статус</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as AthleteStatusKey)}
-              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              {statusOptions.map((s) => (
-                <option key={s} value={s}>{athleteStatusLabels[s]}</option>
-              ))}
-            </select>
-          </div>
+          {isEdit && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Статус</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as AthleteStatusKey)}
+                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                {statusOptions.map((s) => (
+                  <option key={s} value={s}>{athleteStatusLabels[s]}</option>
+                ))}
+              </select>
+              {LEAVES_GROUPS.includes(status) && (
+                <p className="mt-1 text-xs text-destructive">
+                  Спортсмен будет выведен из всех групп и исчезнет из журнала посещаемости. Данные и история сохранены — его можно восстановить позже.
+                </p>
+              )}
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Примечание</label>
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="h-9" placeholder="Особые отметки" />

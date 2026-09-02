@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.dependencies import require_roles
 from app.dependencies import get_athlete_service
@@ -8,6 +8,7 @@ from app.schemas.athlete import (
     AthleteDocumentCreate,
     AthleteMedicalCreate,
     AthleteRankCreate,
+    AthleteTransferCreate,
     AthleteUpdate,
 )
 from app.services.athlete_service import AthleteService
@@ -61,6 +62,24 @@ async def delete_athlete(
     service: AthleteService = Depends(get_athlete_service),
 ):
     return await service.delete(athlete_id)
+
+
+@router.post(
+    "/{athlete_id}/transfer",
+    dependencies=[Depends(require_roles("admin", "director"))],
+)
+async def transfer_athlete(
+    athlete_id: str,
+    data: AthleteTransferCreate,
+    service: AthleteService = Depends(get_athlete_service),
+):
+    try:
+        result = await service.transfer(athlete_id, str(data.new_coach_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Athlete not found")
+    return result
 
 
 @router.post("/{athlete_id}/documents")

@@ -309,3 +309,171 @@ outes/coaches.tsx полностью без моков: таблица (ID, тр
 - TS-фиксы: PlanItem импортируется из mock-data (не экспортируется из plans.functions), сравнение месяца (month string vs number → date.getMonth()+1 либо monthNameRu), search необязательный у /reports/new.
 
 **Смоук (тренер coach@sokol.ru на :8080):** создал отчёт (01.08-31.08.2026, Дзюдо, автозаполнения групп/часов нет — у тренера нет групп), указал athletes 32 / hours 10 / 3 мероприятия → Отправить (payout_tier=50000), Word-скачивание (DOCX base64), список: «1 ожидают проверки»; суперадмин (superadmin@sokol.ru/admin123 на :8081) → /reports, отчёт виден, Открыть → Утвердить → «Утверждён», «· Проверен: 29.08.2026», «1 утверждено»; кнопки approve/reject до фикса не показывались (superadmin ≠ admin) — добавлен canReview. Данные очищены (DELETE reports).
+
+---
+
+## Date
+2026-08-30 (continuation)
+
+## Functional browser test: Groups module (coach role) + found bugfix
+
+### Flow tested (coach@sokol.ru → /groups)
+- List header "Мои группы", empty state, counter "N групп"; create group form (name / sport_type / notes), disabled occupied-athlete checkbox; create athlete via AddAthleteModal ("Новый" tab → AthleteModal); add member from "Из спортсменов" list (occupied filtered); group detail (schedule hint, composition); edit group (rename + schedule_note); delete member (no confirm); delete group (window.confirm → accepted). Verified via psql + DevTools network.
+
+### Bug found and fixed: schedule_note not persisted on group create
+- ackend/app/schemas/group.py: GroupCreate lacked schedule_note field → Pydantic silently dropped it; request body showed schedule_note:"..." but response/DB returned NULL (reproduced 2x via UI). GroupUpdate already had the field (PATCH worked).
+- Fix: added schedule_note: str | None = None to GroupCreate.
+- Regression test added in ackend/tests/test_groups.py (CRUD flow now creates group with schedule_note and asserts it in response).
+- Full pytest: 107 passed. Uvicorn restarted (via Start-Process — background & dies with the shell session; new PID alive, health 200).
+- Browser re-verified: new group created via UI with schedule_note persisted.
+
+### Notes / artifacts (not app bugs)
+- Second POST /groups during test failed with ERR_CONNECTION_REFUSED — caused by backend restart in the middle of the test (my artifact), not the app.
+- "Все спортсмены уже распределены по группам" is shown in AddAthleteModal even when there are no athletes at all (cosmetic copy, minor).
+- DevTools a11y issues (form fields without id/name, 24-37 count) and 403 on /organizations/centers for coach role — pre-existing, out of scope.
+- Test data (2 athletes, 3 groups) cleaned up via psql afterwards.
+
+---
+
+## Session 2026-08-30 (evening): Competitions module - full functional browser test (coach Marina)
+
+**Scope:** /competitions, coach@sokol.ru. Covered: empty state, create upcoming/past competition, registration of athletes, results, filters, search, edit, cancel, delete participant/competition.
+
+**BUGFIX (frontend):** `routes/competitions.tsx` - ManageAthletesModal (and results modal) got `coachId = user?.id` (user UUID), but `/athletes?coach_id=` filters by coach *profile* id (users vs coaches). Result: "Спортсмены не найдены" modal bug.
+- Fix: import `findCoachByUserId` from `lib/api/coaches.functions.ts`; new state `coachProfileId` (useState + useEffect with cancelled flag, resolved when `isCoach && user?.id`); modal prop `coachId={coachProfileId}`; prop type widened to `string | null`; `fetchAthletes({ coachId: coachId ?? undefined })`.
+- Secondary fix (UX): modal state went stale after add/remove/result ops (selectedIds built from old `competition` in state; repeated click = double POST, blocked only by DB unique constraint -> 500). Fix: `load()` now returns data; new `syncModal(data)` refreshes `editingAthletes` from fresh items; `handleAddAthlete`/`handleRemoveAthlete`/`handleSetResult` call `syncModal(await load())`.
+- tsc clean for the file.
+
+**Verified scenarios (all ok):** empty state "0 предстоящих · 0 прошедших"; create upcoming "Кубок города по дзюдо" (POST /events 200 -> POST /events/{id}/competitions 200; dates 12-13.09.2026); 403 /organizations/centers (expected for coach); add 2 athletes via modal (coach list visible after fix, "Добавлен" badges, "УЧАСТНИКИ (2)", counter "2 участников от ЦСЕ"); modal search "Вер" filters coach list only; edit competition (name/city/level saved, PATCH /events + PATCH /events/competitions 200); create past "Спартакиада округа по дзюдо" (22-23.08.2026, auto-section "ПРОШЕДШИЕ", button "Результаты"); results: Стальнов 1 место, Верёвкина 2 место (PUT /results/{athleteId} 200; counters "ПОБЕДИТЕЛЕЙ (1 МЕСТО) 1", "ВСЕГО С МЕСТАМИ 2", card badge "Результаты ЦСЕ: 1 место: 1 · 2 место: 1"); filters status (Предстоящие/Прошедшие/Отменённые) and result ("С результатом" -> only past, "Без результата" -> only upcoming) both correct; search "кубок" filters by name; cancel upcoming (window.confirm -> PATCH /events 200, card moves to "ОТМЕНЁННЫЕ (1)" with "Отменено" badge); delete participant (X button, no confirm, immediate sync: counter 2->1, athlete back to coach list); delete competitions (window.confirm accept, DELETE cascade removes participants+results). DB finally 0 events/0 comps/0 participants/0 results/0 athletes (test athletes removed via psql).
+
+**Findings (not fixed, pre-existing/debt):**
+- `AthleteCreate` (backend/app/schemas/athlete.py) has NO `rank` field (AthleteUpdate does). Choosing rank (КМС e.g.) in the UI create-athlete form is silently dropped -> rank NULL. Minor backend bug, out of scope this session.
+- Participant row in modal shows "Фамилия Имя" without middle name (server builds `athlete_name` from last+first only), while coach-side list shows full ФИО - cosmetic inconsistency.
+- Console: only 403 (expected) + pre-existing TanStack code-split warn for plans/new.tsx.
+
+**Environment notes:** date inputs filled via native setter; Radix calendar days clicked by aria-label (e.g. "суббота, 22 августа 2026 г."), popover stays open after pick - close with Escape; window.confirm handled via handle_dialog accept. uvicorn stayed up (no restart this session). Git WIP still uncommitted (incl. competitions.tsx now).
+
+### Addendum (same day) - remarks from Competitions test implemented
+- **AthleteCreate.rank:** backend/app/schemas/athlete.py - added `rank: str | None = None` to AthleteCreate (was only in AthleteUpdate). AthleteService.create passes model_dump through, so creation now persists rank (column already existed).
+- **Frontend:** components/athlete-modal.tsx now sends `rank: rank || undefined` on create (previously create payload dropped it; update already sent it); lib/api/athletes.functions.ts - added `rank?: string` to AthleteCreatePayload.
+- **Full name in participant list:** backend/app/services/event_service.py (list_competitions) and excel_export_service.py (_attendance) now build athlete_name as full FIO (last+first+middle) instead of last+first. Verified live: GET /events/competitions participant -> "Добрынин Добрыня Добрынич".
+- **Tests:** new backend/tests/test_athletes.py (create with rank+middle name persists -> 200 + list shows rank; create without rank -> rank is None; 401 without auth). Full suite: **110 passed** (was 107).
+- **Caveat:** uvicorn had TWO python processes bound to :8000 (pids 21168, 17600) from earlier Start-Process calls; killed both and started a fresh one (new code without --reload = manual restart required for any later backend change). Verified via live UI: created athlete with rank "МС" -> table shows "МС", counter "С разрядом 1" (pre-restart creation with rank stayed NULL - Pydantic v2 silently ignores unknown field on old running code).
+- DB cleaned afterwards: athletes/events/competitions/participants/results = 0.
+
+### Addendum 2 (same day) - Plan мероприятий: full functional browser test (coach Marina + admin)
+
+**Scope:** /plans, coach@sokol.ru (Марина) full lifecycle + admin cycle (Воронов admin@sokol.ru, isolated browser context). DB pre-cleaned (deleted Marina's pre-existing test plan, event_plans/plan_items = 0).
+
+**Verified scenarios (all ok):**
+- Empty state: "У вас ещё нет плана на 2026 год" + "Создать план на год".
+- Create plan -> coach view: "Соколова Марина · Дзюдо · 2026 год", badge "Черновик", counters 0/0/0 "Всего: 0", deadline banner "Просрочен — план не отправлен до начала III кв. (дедлайн: 01.07.2026)", status & quarter filters, info banner п.3.1.3, "Добавить мероприятие".
+- Added 3 items across categories 3/4/5 (первенство 19.07 / день здоровья 12.08 / встреча с чемпионом 20.11): counters per category + "Всего: N" update; grouping by quarter->month works; quarter change auto-switches month select to first month of quarter; date via Radix calendar (aria-label click, close popover with Escape).
+- Validation п.3.1.4: participants count 2 -> badge "Не учитывается (≤3, п. 3.1.4)".
+- Delete draft item (trash, no confirm) -> counters update, quarter block disappears.
+- Submit draft->submitted "Отправить на проверку" -> card "На проверке" + "Отправлено на проверку", buttons gone (read-only), plan badge becomes "На проверке", deadline banner disappears.
+- Filters: Чёрновик shows drafts / На проверке empty-then-3 / Утверждён 1 / Отклонён 1; quarter 3/4 filters collapse to matching quarters.
+- Admin (/plans table): "1 ожидают проверки", open plan modal -> approve №1 ("Утверждено 30.08.2026"), reject №2 requires comment (submit disabled until filled) -> "Комментарий: …", "Отклонено 30.08.2026"; table row aggregates "на проверке · 1 утверждён · 1 отклонён".
+- Coach side after admin decision: approved item read-only; rejected item shows comment + "Вернуть в черновик" (redraft) -> back to "Черновик" with submit/delete buttons; re-submit again (POST redraft 200, POST submit 200) -> "На проверке".
+
+**API/network:** POST /incentive/plans/items/{id}/submit|redraft 200, GET /incentive/plans 200; export "Скачать Excel" -> POST exportToExcel serverFn 200; 403 /organizations/centers expected for coach. Console: only pre-existing TanStack code-split warn (plans/new.tsx); admin console clean.
+
+**Not covered this session:** "Импорт из Excel" (file upload w/ preview modal, format Флейшман) and /plans/new.tsx bulk-create page.
+
+**Cleanup:** psql DELETE plan_items (3) + event_plans (1) -> 0/0; UI reload shows empty state again. uvicorn stayed up.
+
+### Addendum 3 (same day) - Отчёты: full functional browser test (coach Marina + admin)
+
+**Scope:** /reports, coach@sokol.ru (Марина, тир «полный» ADR-023). Covered: empty state, create draft form (tier banner, auto-badges, нормы), submit with low/full norms, admin approve/reject cycle, coach view of approved/rejected, draft edit + delete, Word export (draft + approved), status filters, search. DB pre-cleaned (reports/report_submissions = 0/0, incentive_criteria=2, Марина tier=full).
+
+**Verified scenarios (all ok):**
+- Empty state: "0 ожидают проверки · 0 утверждено", "Отчёты не найдены.", "Создать отчёт", filters, search.
+- Form /reports/new: тир-баннер "полный", период 01.08–31.08.2026, вид спорта Дзюдо (readonly), ФИО тренера, нормы ≥30(50К)/≥15(25К) чел. и ≥9/≥4,5 ч/нед, textarea-поля 3/4/5.
+- Draft №1 (9a62921b, 5 спортсменов / 2 ч/нед + тексты) → модалка бейджи "ниже нормы", "Оценка комиссии", кнопки Редактировать/Удалить/Отправить; POST /reports 200. Submit → payout_tier=0, "1 ожидают проверки", предупреждение "Выплата не сформирована (0 ₽)".
+- Draft №2 (5ace107d, 30/9 + тексты) → via "Отправить на проверку" create+submit (POST 200+200), payout_tier=50000 (psql подтверждено), бейджи ≥50К, "1 ожидают проверки · 1 утверждено" ... "0 ожидают проверки · 0 утверждено" после админа (см. ниже).
+- Админ (Воронов admin@sokol.ru, page 4): открыл 5ace107d → "Расчёт выплаты" 50 000 / −7 471,26 / 17 356,32 / 74 827,59 ₽, "Утвердить" POST approve 200 → "Утверждён" + "Проверен: 31.08.2026"; открыл 9a62921b → "Отклонить" → textarea "Нормы не выполнены: спортсменов менее базовой нормы (тест)" → "Подтвердить отклонение" (disabled пока пусто) → "Отклонён" + "Комментарий проверяющего" + banner "Выплата не сформирована (0 ₽)". Read-only для админа.
+- Марина после перелогина: "0 ожидают проверки · 1 утверждено"; approved модалка — расчёт выплаты полный (50 000 / −7 471,26 / 17 356,32 / 74 827,59 ₽, "Проверен:"), кнопка только "Скачать Word"; rejected модалка — "Комментарий проверяющего" виден, кнопок НЕТ (только "Скачать Word").
+- Draft №3 (ba540926, 10/5 + тексты) → Word (POST /_serverFn generateReportDocx 200), "Редактировать" → /reports/new?reportId → PATCH спортсменов 10→12 → модалка "12", "ниже нормы" → "Удалить" → window.confirm accept → DELETE 200; после удаления reports=2.
+- Word для approved (кнопка в строке) → POST /_serverFn generateReportDocx 200 (файл скачан).
+- Filters: "Черновик" → Ничего не найдено, "На проверке" → 0, "Утверждён" → 1 (5ace107d), "Отклонён" → 1 (9a62921b), "Все" → 2. Search: "5ace107d" → 1, "Соколова" → 2, "zzz" → Ничего не найдено.
+- CalcPayoutBreakdown совпадает с backend incentive_calc (net 50000 → ndfl 7471,26, insurance 17356,32, gross 74827,59).
+
+**Findings (debt, not fixed):**
+- BUG UX/флоу: отклонённый отчёт НЕЛЬЗЯ переподать. Спека §7 обещает "Отклонён: исправить → отправить повторно" и backend разрешает rejected→submitted, но модалка rejected не даёт кнопок (нет Редактировать/Отправить), а /reports/new?reportId= → "Сохранить" возвращает 422 "Only draft reports can be edited" (консоль "Ошибка сохранения отчёта"). Тренер застрял с отклонённым отчётом до принудительного DELETE из БД. Рекомендация: кнопка "Вернуть в черновик"/"Исправить" для rejected (как в /plans redraft) либо разрешить PATCH для rejected.
+- Список /reports не пере-фетчится после создания/отправки отчёта и возврата из формы (повторяемое поведение: содержимое старее, пока не нажать "Обновить" или reload).
+
+**Environment notes:** MCP fill не пишет в input[type=number] на /reports/new (нативные JS setter+input event — рабочий приём); некоторые MCP-клики не срабатывают в модалке — JS .click() как fallback; подтверждено delete → DELETE 200 в сети. Данные зачищены psql: report_submissions DELETE 4, reports DELETE 2 → 0/0; UI reload → empty state. uvicorn stayed up.
+
+### Addendum 4 (same day) - Отчёты: доступ по ролям и центрам (center-scoping)
+
+**Правило (уточнено пользователем):** тренер видит только свои отчёты; руководитель центра — отчёты тренеров СВОЕГО центра; директор центров — все отчёты (с опциональным фильтром по центру).
+
+**Проблема до фикса:** фронтенд уже слал `centerId` из `/auth/me` (`user.centerId`, reports.tsx:107), но бэкенд НЕ привязывал фильтр к роли: итоговый `list_reports` у admin/director использовал незашритченный query `center_id` (можно было просмотреть чужой центр), а `get/approve/reject` вообще не проверяли центр — админ мог утвердить отчёт другого центра. Паттерн определения центра уже существовал в `incentive_service.get_criteria`.
+
+**Backend (реализовано):**
+- `services/report_service.py`: helper `accessible_center(user)` (coach → `coach.center_id`; admin → `user.center_id`; director/superadmin → None = все) + `ensure_can_access(report, user)` (403 для чужого центра/чужого отчёта; director/superadmin обходят). Применён в `update`/`delete` (заменил прежний coach-чек), а также используется из роутера.
+- `modules/reports/router.py`: `list_reports` — coach → только свои; admin → принудительно свой центр (query `center_id` игнорируется; без центра у админа → пустой список); director/superadmin → все + опциональный фильтр `center_id`; `get_report`/`submit_report`/`approve_report`/`reject_report` — добавлен `ensure_can_access` (закрыта дыра «админ утверждает чужой центр»).
+- Семантика бесцентрового отчёта (center_id=NULL): доступ только у автора и director/superadmin; руководитель центра его НЕ видит.
+- conftest: второй центр (`CENTER2_ID`, код региона `TRB` — не пересекается с `TR2` из test_coach_tiers.py) + admin2 (admin center2) + coach2 (coach-запись center2); хелпер `_login` в тестах.
+- Новый `tests/test_reports_scoping.py` (7 тестов): admin видит только свой центр / попытка подмены `center_id` в query не проходит / get/patch/delete/submit/approve/reject чужого центра → 403; approve своего → 200; director видит оба центра и review любого; superadmin видит все; coach2 видит только свои. Обновлён `test_reports_workflow.py::test_coach_cannot_touch_foreign_report` (foreign отчёт теперь от тренера др. центра; admin своего центра → 403).
+- **Финально: 124 passed (было 110), ruff clean.**
+
+**Frontend:** правок не потребовалось (уже читает `centerId` из `/auth/me`).
+
+**Смоук после рестарта uvicorn (без --reload, PID 12364):** health ok, login admin@sokol.ru → GET /reports 200, `reports count = 0`.
+
+### Addendum 5 (same day) — Отчёты: «Вернуть в черновик» для отклонённого отчёта
+
+**Дефект (см. Addendum 3):** специ §7 обещает «отклонён: исправить → отправить повторно», но у rejected в модалке не было кнопок, а PATCH → 422 «Only draft reports can be edited». Тренер застревал (освобождение только DELETE из БД).
+
+**Решение — паттерн планов `redraft`:**
+- Backend: `ALLOWED_TRANSITIONS["rejected"]` → `{"submitted","draft"}`; `_transition` при `target="draft"` сбрасывает `reviewer_id/review_comment/reviewed_at/payout_tier` напрямую на ORM-инстансе + flush/refresh (репо `BaseRepository.update` фильтрует `None`, base.py:46 — сброс через него невозможен; заодно выявлено, что повторный submit НЕ сбрасывал старый review_comment — теперь чисто). Новый `service.redraft()`: `ensure_can_access` + авторство (`str(author_id) == user.id`, иначе 403; superadmin bypass) → `_transition("draft")` (фиксирует событие в report_submissions). Роутер: `POST /reports/{id}/redraft` (roles coach/admin/director). `CurrentUser` импортирован в сервис.
+- Frontend: `reports.functions.ts` — `redraftReport`; модалка `reports.tsx` — блок `status==="rejected" && isAuthor` с кнопкой «Вернуть в черновик» + подсказкой; после redraft `load()` перерисовывает модалку (draft → появляются Редактировать/Удалить/Отправить). Иконка FileText (уже импортирована).
+- Тесты (`test_reports_workflow.py`, +3): полный цикл переотправки draft→submit→reject→redraft(200, comment/payout сброшены)→PATCH(200)→submit→approve; redraft не-автором (coach2) → 403; redraft draft/submitted/approved → 422. Рабочие грабли: сравнение `user.id` (str) с `author_id` (UUID) только через `str(...)`, иначе ложный 403.
+- **pytest 127 passed (было 124), ruff clean; tsc — только пре-существующие ошибки (exports.functions.ts, CoachProfileEditor:142/157).**
+- Live-смоук (uvicorn PID 17016): coach submit → admin reject(«исправьте») → redraft(draft, comment=[], payout=[] ) → PATCH → resubmit → approve 200. Тестовые данные зачищены (reports/submissions/template=0/0, шаблон-сид не тронут).
+
+### Addendum 6 (2026-08-31) — Отпуск/больничный тренеру + центр-скоупинг «Тренеры»
+
+**Фича:** тренер правит отпуска/больничные у себя (профиль, инлайн-карточки); админ — тренерам своего центра (директор/суперадмин — все). Для админа введён центр-скоупинг в модуле «Тренеры» (по образцу отчётов, Addendum 4).
+
+**Backend:**
+- `coach_service.py` (list/get/update — добавлен параметр `user`): admin без director/superadmin → forced `user.center_id` (без центра у админа → `[], 0`); `get`/`update` → `_assert_center_access` (чужой центр → 403 «Coach belongs to another center»); helpers `_admin_scoped`, `_user_row` (`session.get(User, UUID(...))`). Восстановлены строки `vacations_data = dump.pop(...)`/`sick_leaves_data = dump.pop(...)` (после edit-опечатки update не был сломан).
+- `modules/coaches/router.py`: в `GET ""`, `GET /{coach_id}`, `PATCH /{coach_id}` добавлен `user: CurrentUser = Depends(get_current_user)` и прокидка в сервис.
+- Тесты `test_coaches.py` (+3): admin1 видит только своего (COACH_ID), admin2 — только своего (COACH2_ID); GET/PATCH чужого центра → 403; director GET/PATCH COACH2_ID → 200; админ без центра (хелпер `_extra_admin_user_without_center`, `_login`) → пустой список. **pytest 130 passed (было 127); ruff --fix применён к router/tests (7 автофиксов).**
+
+**Frontend:**
+- `route/profile.tsx`: отпуска/больничные переведены из readonly в инлайн-редактирование (паттерн карточек «Изменить отпуск» → LeaveSection editing → «Сохранить отпуск»/«Отменить»); state `vacations/sick_leaves/draft*/sectionSaving/sectionError`, точечные PATCH `updateMyCoach({vacations})`/`({sick_leaves})`; `crossLeaveOverlap` (пересечение разных типов запрещено); удалён мёртвый `coachHasActivePeriod`.
+- `CoachProfileEditor.tsx`: сокращён до specialization+biography (устранён пре-существующий TS2304 — квалификацию/отпуска тренер больше не трогает).
+- `LeaveSection.tsx`: `checkOverlaps` экспортирован (используется в profile.tsx).
+
+**Верификация:** tsc — по профильным файлам чисто (остались только пре-существующие в exports.functions.ts); uvicorn перезапущен (PID 24756 → 15000); смоук Chrome: тренер добавил отпуск 01–15.09.2026 и больничный 20–25.09.2026 (PATCH /coaches/me body `{"vacations":[{"start_date":"2026-09-01","end_date":"2026-09-15"}]}` — реальные даты, не `[]`), карточки отображают периоды; админ в /coaches видит только Марину (свой центр), в карточке тренера отпуск/больничный видны и открывается редактирование; суперадмин через API видит 2 тренеров (оба центра). Тестовые периоды зачищены psql (DELETE 1/1).
+
+**Грабли (важно):** MCP fill/нативный setter+input-event НЕ доходят до React controlled `<input type="date">` (payload `{"vacations":[]}`) — рабочий приём: `const key = Object.keys(el).find(k=>k.startsWith("__reactProps$")); el[key].onChange({target:{value:"2026-09-01"}})`.
+
+### Addendum 7 (2026-09-02) — Разовый импорт данных тренера Блошкова (бокс, ЦСЕ Ачинск) + фикс рангов + фикс скролла модалок
+
+**Разовый импорт данных (метаданные):** данные тренера Блошкова А.Е. (бокс, ЦСЕ Ачинск) загружены в БД разовым скриптом напрямую (не через API):
+- Тренер-аккаунт: ox.achinsk@sokol.ru / пароль Bloshkov-2026! (bcrypt, роль coach). Coach: специализация «Бокс», hire_date 2026-01-01.
+- 39 спортсменов (36 с датами рождения, 3 без дат — заглушка 2000-01-01: Понамарев Макар, Маслов Иван, Коньковский Савелий — уточнить в UI).
+- 4 группы: НП-1 (10), НП-3 (10), ТГ-2 (8), ТГ-3 (8); member join 2026-01-01.
+- План 2026 (draft): 32 PlanItem (категории 3/4/5, январь–сентябрь; диапазоны дат вида «20.02-21.02.2026» в date String(20)).
+- 7 отчётов-черновиков (monthly, шаблон monthly_coach_report): янв (40/34 ч/нед), фев–июн (40/36), авг (39/36). data_json ключи: thletes_count, hours_per_week, special_events, sport_events, development_events. Содержимое — из OCR-текстов сканов отчётов.
+- Парсинг: parse_bloshkov.py (Excel → JSON) + import_bloshkov.py (импорт в БД, транзакция, идемпотентность по email). Артефакты во временной папке C:\Users\alx\AppData\Local\Temp\opencode\.
+- OCR: apidocr 3.9.2 (PP-OCRv5, cyrillic) вместо apidocr_onnxruntime 1.2.3 (портил кириллицу → латиницу).
+- Верификация: API-логин + срезы 39/4/32/7; /athletes — coach_name «Блошков Алексей Евгеньевич».
+
+**Исправления при парсинге дат плана:** апрель cat3 «2026-02-14»→22.04.2026 (копипаста), январь cat5 «16.01.2025»→16.01.2026, «05.04.206»→05.04.2026. «Склеенные» строки = продолжения строк (второе событие месяца на отдельной строке с пустым первым столбцом), не пайпы.
+
+**Фикс: разряд «Без разряда» считался разрядом на странице спортсменов:**
+- Причина: разовые данные содержали аббревиатуры рангов из Excel (Б/Р, 2 юн., I/II/III), а фронтенд-хелпер isSportRank (rontend/src/lib/ranks.ts) отсекал только строку «Без разряда» — Б/Р проходил как разряд (19+ спортсменов «с разрядом»).
+- Данные приведены к каноническим значениям из anks.ts (SQL-патч thletes.rank, 39 строк): Б/Р/NULL→«Без разряда», N юн.→N-й юн., I/II/III→«N-й разряд».
+- Защита на будущее: в parse_bloshkov.py добавлен RANK_MAP + 
+ormalize_rank() — парсер выдаёт канонические значения.
+- Семантика «С разрядом»: isSportRank исключает только «Без разряда» (и пустые); юношеские разряды (1-й/2-й/3-й юн.) считаются разрядами (по уточнению пользователя). После нормализации /athletes показывает 3 с разрядом (1-й/2-й/3-й разряд) + 14 юношеских.
+
+**Фикс: модальные окна не скроллились в Chrome (в Edge работали):**
+- Дефект: модалки отчётов, планов, тренировок и соревнований использовали единый паттерн ixed inset-0 ... overflow-y-auto ... backdrop-blur-sm. В Chrome ackdrop-filter на скроллируемом ixed-контейнере ломал прокрутку колесом/скроллбаром.
+- Фикс: убран ackdrop-blur-sm со всех скроллируемых оверлеев (9 мест): eports.tsx×1, plans.tsx×2, 	rainings.tsx×4, competitions.tsx×2.
+- ackdrop-blur-sm оставлен на не-скроллируемых loading/error-оверлеях (баг не проявляется).
+- Верификация: 	sc --noEmit чисто.

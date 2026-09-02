@@ -19,6 +19,7 @@ from app.models.incentive_program import IncentiveProgram
 from app.models.organization import Center, Region
 from app.models.report import Report, ReportSubmission, ReportTemplate
 from app.models.schedule import Schedule, SchedulePeriod
+from app.models.training import Training
 from app.models.user import Permission, Role, RolePermission, User, UserRole
 
 __all__ = [
@@ -62,4 +63,5 @@ __all__ = [
     "PayoutRow",
     "EventPlan",
     "PlanItem",
+    "Training",
 ]
